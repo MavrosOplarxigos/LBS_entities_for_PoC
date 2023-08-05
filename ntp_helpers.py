@@ -1,4 +1,4 @@
-import time
+tmport time
 from time import ctime
 import ntplib
 

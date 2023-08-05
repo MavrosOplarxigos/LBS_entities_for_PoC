@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "CA_server.py", line 78, in certificate_issuer_check
+    public_key.verify(
+  File "/home/rafail/.local/lib/python3.8/site-packages/cryptography/hazmat/backends/openssl/rsa.py", line 571, in verify
+    _rsa_sig_verify(
+  File "/home/rafail/.local/lib/python3.8/site-packages/cryptography/hazmat/backends/openssl/rsa.py", line 322, in _rsa_sig_verify
+    raise InvalidSignature
+cryptography.exceptions.InvalidSignature

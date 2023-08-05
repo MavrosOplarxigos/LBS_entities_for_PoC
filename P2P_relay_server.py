@@ -8,6 +8,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.backends import default_backend
+from cryptography import x509
 
 # Serving Nodes List
 # IMPROVEMENT: make this into a dictionary (or set like) for lower complexity (higher performance)
@@ -20,9 +22,6 @@ class ServingNodeDict(dict):
         self['ip'] = serving_ip
         self['port'] = serving_port
         self['timestamp'] = record_timestamp
-
-
-
 
 # This function returns the number of records that will be returned to the querying node
 # The purpose of using a function for this is code modularity. Thus allowing us to make 
@@ -51,7 +50,10 @@ def client_hello(client_socket, client_address):
 
     # Receive [ClientCertificateBytes]
     ClientCertificateBytes = receive_all(client_socket, ClientCertificateLength)
-    # TODO: output the certificate subject name
+    certificate = x509.load_pem_x509_certificate(ClientCertificateBytes, default_backend())
+    subject_name = certificate.subject.rfc4514_string()
+
+    print(f"Certificate received with subject name = {subject_name}")
 
     # Receive [Timestamp] (8 bytes, big-endian)
     timestamp_data = receive_all(client_socket, 8)
@@ -93,6 +95,8 @@ def handle_quering_client(client_socket, client_address):
     # Step 1: Select at random some records from the serving node list
 
     # Step 2: Put the selected records into a single byte array with delimiter
+
+    # Step 3: Encrypt the records byte array using the client's public key
 
     # Step 3: Encrypt the records byte array using the client's public key
 
@@ -186,8 +190,6 @@ if __name__ == "__main__":
 
 # I want a program that has 2 TCP servers accepting connections in 2 separate ports
 # at the same time using threads (each server has its own thread). The first thread 
-# receives queries from clients and returns some IP addresses and TCP ports encrypted 
-# using the clients public key which can be retrieved from the certificate that the 
 # client solicits to this server once he connects to it. This IP addresses along with 
 # the ports will be saved in a list which I mention about below. The second thread will 
 # be receiving in raw bytes from the client; that is an IP address and a port and this 
