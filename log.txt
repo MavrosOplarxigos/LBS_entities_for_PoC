@@ -1,8 +1,10 @@
 Traceback (most recent call last):
-  File "CA_server.py", line 78, in certificate_issuer_check
-    public_key.verify(
-  File "/home/rafail/.local/lib/python3.8/site-packages/cryptography/hazmat/backends/openssl/rsa.py", line 571, in verify
-    _rsa_sig_verify(
-  File "/home/rafail/.local/lib/python3.8/site-packages/cryptography/hazmat/backends/openssl/rsa.py", line 322, in _rsa_sig_verify
-    raise InvalidSignature
-cryptography.exceptions.InvalidSignature
+  File "CA_server.py", line 126, in encrypt_byte_array_with_public
+    encrypted_block = public_key.encrypt(
+  File "/home/rafail/.local/lib/python3.8/site-packages/cryptography/hazmat/backends/openssl/rsa.py", line 550, in encrypt
+    return _enc_dec_rsa(self._backend, self, plaintext, padding)
+  File "/home/rafail/.local/lib/python3.8/site-packages/cryptography/hazmat/backends/openssl/rsa.py", line 97, in _enc_dec_rsa
+    return _enc_dec_rsa_pkey_ctx(backend, key, data, padding_enum, padding)
+  File "/home/rafail/.local/lib/python3.8/site-packages/cryptography/hazmat/backends/openssl/rsa.py", line 163, in _enc_dec_rsa_pkey_ctx
+    raise ValueError("Encryption/decryption failed.")
+ValueError: Encryption/decryption failed.

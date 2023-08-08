@@ -1,3 +1,7 @@
+# This file is intended for:
+# - The CA server implementation
+# - Implementation of all the functions necessary to deal with the related crypto in the scheme
+
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
@@ -7,7 +11,6 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, utils
 import traceback
 import os
-
 
 PATH_TO_CA_CERT="../rsa_creds/rsa_CA_certificate.crt"
 PATH_TO_CA_PRIVATE="../rsa_creds/rsa_CA_private.key"
@@ -62,7 +65,6 @@ def certificate_date_check(certificate):
         not_before = certificate.not_valid_before
         not_after = certificate.not_valid_after
         current_date = datetime.utcnow()
-
         if current_date < not_before:
             # print("The certificate is not yet valid.")
             return False
@@ -93,6 +95,82 @@ def check_signature(signed_bytes,original_byte_array,certificate):
         print("Error:",e)
         return False
 
+def sign_byte_array_with_private(byte_array,private_key):
+    signature = private_key.sign(
+            byte_array,
+            padding.PKCS1v15(),
+            hashes.SHA256()
+            )
+    return signature
+
+def encrypt_byte_array_with_public(byte_array,certificate):
+    try:
+        
+        # print("Encryption function enter!")
+        public_key = certificate.public_key()
+        # debug_pub_crypto_attributes(public_key)
+
+        # Check RFC 3447 section 7.1.1
+        # https://datatracker.ietf.org/doc/html/rfc3447.html#section-7.1.1
+        block_size = 190
+
+        enc_array = bytearray()
+        input_offset = 0
+
+        while input_offset < len(byte_array):
+            input_block = byte_array[input_offset:input_offset + block_size]
+            encrypted_block = public_key.encrypt(
+                bytes(input_block),
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                    )
+                )
+            enc_array.extend(encrypted_block)
+            input_offset += block_size
+
+        return enc_array
+    except Exception as e:
+        print("Encryption error:",e)
+        traceback.print_exc()
+        return None
+
+def decrypt_byte_array_with_private(byte_array,private_key):
+    try:
+        
+        # Check RFC 3447 section 7.1.2
+        # https://datatracker.ietf.org/doc/html/rfc3447.html#section-7.1.2
+        block_size = private_key.key_size // 8
+
+        dec_array = bytearray()
+        input_offset = 0
+        
+        while input_offset < len(byte_array):
+            input_block = byte_array[input_offset:input_offset + block_size]
+            decrypted_block = private_key.decrypt(
+                    bytes(input_block),
+                    padding.OAEP(
+                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                        algorithm=hashes.SHA256(),
+                        label=None
+                        )
+                )
+            dec_array.extend(decrypted_block)
+            input_offset += block_size
+
+        return dec_array
+    except Exception as e:
+        print("Decryption error:",e)
+        return None
+
+def debug_pub_crypto_attributes(public_key):
+    print("Public Key:", public_key)
+    print("Public Key Attributes:", dir(public_key))
+    print("RSA Key Size:", public_key.key_size)
+    print("MGF:", padding.MGF1(algorithm=hashes.SHA256()))
+    print("Algorithm:", hashes.SHA256())
+    
 def debug_fun():
     try:
         read_CA_certificate_from_file()
@@ -139,12 +217,42 @@ def debug_fun2():
                 padding.PKCS1v15(),
                 hashes.SHA256()
                 )
-        print ("Singature is valid!")
+        print("Singature is valid!")
+
+        print(f"{YELLOW}Now testing encrypt/decrypt{RESET}")
+
+        data = os.urandom(100000)
+        print("The size of the initial data array is " + str(len(data)) )
+    
+        enc_array = encrypt_byte_array_with_public(data,CA_CERTIFICATE)
+        
+        if enc_array == None:
+            print(f"{RED}Encryption failed!{RESET}")
+            return
+        else:
+            print(f"{GREEN}Encryption successful!{RESET}")
+
+        print("The size of the encrypted array is " + str(len(enc_array)) )
+
+        dec_array = decrypt_byte_array_with_private(enc_array,CA_PRIVATE)
+
+        if dec_array == None:
+            print(f"{RED}Decryption failed!{RESET}")
+            return
+        else:
+            print(f"{GREEN}Decryption successful!{RESET}")
+
+        print("The size of the decrypted array is " + str(len(dec_array)) )
+
+        if data == dec_array:
+            print(f"{GREEN}Encryption and Decryption work!{RESET}")
+        else:
+            print(f"{RED}Problem with enc & dec{RESET}")
 
     except Exception as e:
         print("Error:",e)
         traceback.print_exc()
 
-
 if __name__ == "__main__":
     debug_fun()
+    debug_fun2()
