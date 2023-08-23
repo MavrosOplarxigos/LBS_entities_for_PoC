@@ -1,2 +1,4 @@
 cryptography
 ntplib
+time
+colorama

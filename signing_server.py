@@ -2,6 +2,8 @@ import socket
 import threading
 from P2P_relay_server import client_hello
 
+FWD_SERVER_PORT = 50003
+
 def protocol(client_socket, client_address):
 
     print(f"Accepted connection from {client_address}")

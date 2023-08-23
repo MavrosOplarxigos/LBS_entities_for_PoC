@@ -11,17 +11,12 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, utils
 import traceback
 import os
+from debug_colors import *
 
 PATH_TO_CA_CERT="../rsa_creds/rsa_CA_certificate.crt"
 PATH_TO_CA_PRIVATE="../rsa_creds/rsa_CA_private.key"
 CA_CERTIFICATE = None
 CA_PRIVATE = None
-
-# Colors for debugging
-RESET = '\033[0m'
-RED = '\033[91m'
-GREEN = '\033[92m'
-YELLOW = '\033[93m'
 
 def read_CA_private_from_file():
     global CA_PRIVATE
@@ -94,6 +89,10 @@ def check_signature(signed_bytes,original_byte_array,certificate):
     except Exception as e:
         print("Error:",e)
         return False
+
+# alias of check_signature
+def verify_signature(a,b,c):
+    return check_signature(a,b,c)
 
 def sign_byte_array_with_private(byte_array,private_key):
     signature = private_key.sign(
