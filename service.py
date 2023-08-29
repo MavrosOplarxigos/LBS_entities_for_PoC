@@ -72,9 +72,69 @@ def reply_INFO(client_socket):
         traceback.print_exc()
         return False
 
-def reply_CRDS(client_socket):
 
-    return False
+def reply_CRDS(client_socket,client_address):
+
+    try:
+        # CRDS expected structure:
+        # [NODE_NAME_LENGTH] | [   NODE_NAME    ]
+        # [       4        ] | [NODE_NAME_LENGTH]
+
+        NODE_NAME_LENGTH_bytes = receive_all(client_socket,4)
+        #print("Node length byte array: ",NODE_NAME_LENGTH_bytes)
+        #NODE_NAME_LENGTH_little = struct.unpack('<i',NODE_NAME_LENGTH_bytes)[0]
+        #print("LITTLE length as print ",NODE_NAME_LENGTH_little)
+        NODE_NAME_LENGTH_big = struct.unpack('>i',NODE_NAME_LENGTH_bytes)[0]
+        print("NODE_NAME_LENGTH_big = ",NODE_NAME_LENGTH_big)
+
+        NODE_NAME_bytes = receive_all(client_socket,NODE_NAME_LENGTH_big)
+        NODE_NAME = NODE_NAME_bytes.decode('utf-8')
+        print(f"Node name form {client_address}: {NODE_NAME}")
+
+        # Reply with VALID or INVLD whether the name exists in the CA or not
+        if exists_name(NODE_NAME):
+            send_all(client_socket,b"VALID")
+            print(f"{GREEN}The name {NODE_NAME} from {client_address} is valid!")
+        else:
+            send_all(client_socket,b"INVLD")
+            print(f"{RED}The name {NODE_NAME} from {client_address} is not registered with the CA!{RESET}")
+            return True
+
+        # reply structure NODE PRIVATE KEY:
+        # [ NODE PRIVATE KEY LENGTH ] | [     NODE PRIVATE KEY    ]
+        # [         4               ] | [ NODE PRIVATE KEY LENGTH ]
+
+        NODE_PRIVATE_KEY = read_private_from_file_as_byte_array(NODE_NAME)
+        NODE_PRIVATE_KEY_LENGTH = struct.pack('<I',len(NODE_PRIVATE_KEY))
+        private_key_data = (NODE_PRIVATE_KEY_LENGTH + NODE_PRIVATE_KEY)
+        send_all(client_socket,private_key_data)
+        print(f"Private key sent to {client_address} aka {NODE_NAME}")
+
+        # reply structure NODE CERTIFICATE:
+        # [ NODE CERTIFICATE LENGTH ] | [     NODE CERTIFICATE    ]
+        # [            4            ] | [ NODE CERTIFICATE LENGTH ]
+        NODE_CERTIFICATE = read_certificate_from_file_as_byte_array(NODE_NAME)
+        NODE_CERTIFICATE_LENGTH = struct.pack('<I',len(NODE_CERTIFICATE))
+        certificate_data = (NODE_CERTIFICATE_LENGTH + NODE_CERTIFICATE)
+        send_all(client_socket,certificate_data)
+        print(f"Node certificate sent to {client_address} aka {NODE_NAME}")
+
+        # reply to structure CA CERTIFICATE:
+        # [ CA CERTIFICATE LENGTH ] | [     CA CERTIFICATE    ]
+        # [          4            ] | [ CA CERTIFICATE LENGTH ]
+        CA_CERTIFICTE_for_node = read_CA_certificate_from_file_as_byte_array()
+        CA_CERTIFICATE_LENGTH_for_node = struct.pack('<I',len(CA_CERTIFICATE_for_node))
+        CA_certificate_data = (CA_CERTIFICATE_LENGTH_for_node + CA_CERTIFICATE_for_node)
+        send_all(client_socket,CA_certificate_data)
+        print(f"CA certificate sent to {client_address} aka {NODE_NAME}")
+
+
+
+    
+        return True
+    except Exception as e:
+        print("Error trying to send CRDS reply:",e)
+        return False
 
 def handle_client(client_socket,client_address):
     print(f"{YELLOW}Waiting for client @ {client_address} to send a message!{RESET}",flush=True)
@@ -95,7 +155,7 @@ def handle_client(client_socket,client_address):
     # the LBS entities.
     elif option == "CRDS":
         print(f"Client {client_address} requested credentials.")
-        status_reply_CRDS = reply_CRDS(client_socket)
+        status_reply_CRDS = reply_CRDS(client_socket,client_address)
         if status_reply_CRDS:
             print(f"{GREEN}Reply to CRDS request from {client_address} sent!{RESET}")
         else:

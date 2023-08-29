@@ -13,10 +13,29 @@ import traceback
 import os
 from debug_colors import *
 
+PATH_TO_CREDS="../rsa_creds/"
 PATH_TO_CA_CERT="../rsa_creds/rsa_CA_certificate.crt"
 PATH_TO_CA_PRIVATE="../rsa_creds/rsa_CA_private.key"
 CA_CERTIFICATE = None
 CA_PRIVATE = None
+
+def path_to_node_cert_by_name(name):
+    return PATH_TO_CREDS + "rsa_" + name + "_certificate.crt"
+
+def path_to_node_private_by_name(name):
+    return PATH_TO_CREDS + "rsa_" + name + "_private.key"
+
+def exists_name(name):
+    # we want to check if the name the user requested is registered or not
+    certificate_path = path_to_node_cert_by_name(name)
+    try:
+        with open(certificate_path,"rb") as cert_file:
+            return True
+    except FileNotFoundError:
+        return False
+    except Exception as e:
+        print("Error:",e)
+        return False
 
 def read_CA_private_from_file():
     global CA_PRIVATE
@@ -24,10 +43,45 @@ def read_CA_private_from_file():
         private_key_bytes = private_key_file.read()
         CA_PRIVATE = load_pem_private_key(private_key_bytes, password=None, backend=default_backend())
 
+def read_private_from_file_as_byte_array(name):
+    path = path_to_node_private_by_name(name)
+    try:
+        with open(path,"rb") as private_file:
+            return private_file.read()
+    except FileNotFoundError:
+        print(f"{RED}Private key file for {name} was not found!{RESET}")
+        return None
+    except Exception as e:
+        print("Error:",e)
+        return None
+
+def read_certificate_from_file_as_byte_array(name):
+    path = path_to_node_cert_by_name(name)
+    try:
+        with open(path,"rb") as cert_file:
+            return cert_file.read()
+    except FileNotFoundError:
+        print(f"{RED}Certificate file for {name} was not found!{RESET}")
+        return None
+    except Exception as e:
+        print("Error:",e)
+        return None
+
 def read_certificate_from_file(path):
     with open(path,"rb") as cert_file:
         certificate_bytes = cert_file.read()
         return x509.load_pem_x509_certificate(certificate_bytes, default_backend())
+
+def read_CA_certificate_from_file_as_byte_array():
+    try:
+        with open(PATH_TO_CA_CERT,"rb") as cert_file:
+            return cert_file.read()
+    except FileNotFoundError:
+        print(f"{RED}CA certificate file not found in {PATH_TO_CA_CERT}{RESET}")
+        return None
+    except Exception as e:
+        print("Error:",e)
+        return None
 
 def read_CA_certificate_from_file():
     global CA_CERTIFICATE
