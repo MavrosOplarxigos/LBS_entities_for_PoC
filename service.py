@@ -119,17 +119,37 @@ def reply_CRDS(client_socket,client_address):
         send_all(client_socket,certificate_data)
         print(f"Node certificate sent to {client_address} aka {NODE_NAME}")
 
-        # reply to structure CA CERTIFICATE:
+        # reply structure CA CERTIFICATE:
         # [ CA CERTIFICATE LENGTH ] | [     CA CERTIFICATE    ]
         # [          4            ] | [ CA CERTIFICATE LENGTH ]
-        CA_CERTIFICTE_for_node = read_CA_certificate_from_file_as_byte_array()
+        CA_CERTIFICATE_for_node = read_CA_certificate_from_file_as_byte_array()
         CA_CERTIFICATE_LENGTH_for_node = struct.pack('<I',len(CA_CERTIFICATE_for_node))
         CA_certificate_data = (CA_CERTIFICATE_LENGTH_for_node + CA_CERTIFICATE_for_node)
         send_all(client_socket,CA_certificate_data)
         print(f"CA certificate sent to {client_address} aka {NODE_NAME}")
 
+        # reply strucutre psuedonymous certificates/private keys
+        # we have 4 psuedonymous certificates/private key pairs
+        for i in range(1,5):
+            # [ NODE PCERT LENGTH ] | [ NODE PCERT   ] | [ NODE PPKEY LENGTH ] | [   NODE PPKEY  ]
+            # [        4          ] | [NODE PCERT LEN] | [         4         ] | [ NODE PPKEY LEN]
 
+            # retrieving the data
+            PCERT_PATH = path_to_node_Pcert_by_name(NODE_NAME,i)
+            PPKEY_PATH = path_to_node_Pprivate_by_name(NODE_NAME,i)
+            NODE_PCERT = file_as_byte_array(PCERT_PATH)
+            NODE_PPKEY = file_as_byte_array(PPKEY_PATH)
+            NODE_PCERT_LEN = len(NODE_PCERT)
+            packed_NODE_PCERT_LEN = struct.pack('<I',NODE_PCERT_LEN)
+            NODE_PPKEY_LEN = len(NODE_PPKEY)
+            packed_NODE_PPKEY_LEN = struct.pack('<I',NODE_PPKEY_LEN)
 
+            print(f"Pseudo-credentials #{i} for {NODE_NAME} have been sent.")
+
+            # sending the data (if this proves slow we might need to change the socket timeout)
+            pseudo_data = ( packed_NODE_PCERT_LEN + NODE_PCERT + packed_NODE_PPKEY_LEN + NODE_PPKEY
+                    )
+            send_all(client_socket,pseudo_data)
     
         return True
     except Exception as e:
@@ -187,15 +207,28 @@ def debug_INFO_message():
     testing_unpack_INFO(INFO_ARRAY)
     return
 
+
 def inits():
+    # Color setting for debugs
     init(autoreset=True)
+    # Tell the ntp_helpers module to sync with the NTP server for timestamp checking
+    print("NTP sync in progress...")
+    ntp_sync()
+    print(f"{GREEN}NTP sync completed!{RESET}")
+    # Read CA credentials
+    print("Retrieving CA credentials...")
+    read_CA_private_from_file()
+    read_CA_certificate_from_file()
+    print(f"{GREEN}CA credentials retrieved!{RESET}")
 
 def main():
     inits()
     try:
-        signal.signal(signal.SIGINT, signal_handler)
-        ntp_sync()
-        
+
+        # Start P2P related services
+        P2Pstarter()
+
+        signal.signal(signal.SIGINT, signal_handler)        
         # The main service for providing clients with necessary information to allow for the
         # scheme to work will start last after all other services. So that when we reply to the
         # user that we are online that means that all services/entities of the LBS scheme are online.

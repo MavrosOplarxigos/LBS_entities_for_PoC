@@ -2,6 +2,7 @@
 # - The CA server implementation
 # - Implementation of all the functions necessary to deal with the related crypto in the scheme
 
+from cryptography.exceptions import InvalidSignature
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
@@ -25,6 +26,16 @@ def path_to_node_cert_by_name(name):
 def path_to_node_private_by_name(name):
     return PATH_TO_CREDS + "rsa_" + name + "_private.key"
 
+def path_to_node_Pcert_by_name(name,index):
+    return PATH_TO_CREDS + "rsa_" + name + f"_Pcert{index}.crt"
+
+def path_to_node_Pprivate_by_name(name,index):
+    return PATH_TO_CREDS + "rsa_" + name + f"_Pprivate{index}.key"
+
+def file_as_byte_array(path):
+    with open(path,"rb") as f:
+        return f.read()
+
 def exists_name(name):
     # we want to check if the name the user requested is registered or not
     certificate_path = path_to_node_cert_by_name(name)
@@ -36,6 +47,14 @@ def exists_name(name):
     except Exception as e:
         print("Error:",e)
         return False
+
+def retrieve_CA_certificate():
+    read_CA_certificate_from_file()
+    return CA_CERTIFICATE
+
+def retrieved_CA_private():
+    read_CA_private_from_file()
+    return CA_PRIVATE
 
 def read_CA_private_from_file():
     global CA_PRIVATE
@@ -105,6 +124,12 @@ def cert_subject_string(certificate):
 
 def certificate_from_byte_array(certificate_bytes):
     return x509.load_pem_x509_certificate(certificate_bytes, default_backend())
+
+def PEMcertificate_from_DER_byte_array(certificate_bytes):
+    DER_certificate = x509.load_der_x509_certificate(certificate_bytes,default_backend())
+    PEM_certificate_bytes = DER_certificate.public_bytes(encoding=serialization.Encoding.PEM)
+    PEM_certificate = x509.load_pem_x509_certificate(PEM_certificate_bytes, default_backend())
+    return PEM_certificate
 
 def certificate_issuer_check(certificate,issuer_certificate):
     return check_signature(certificate.signature,certificate.tbs_certificate_bytes,issuer_certificate)
