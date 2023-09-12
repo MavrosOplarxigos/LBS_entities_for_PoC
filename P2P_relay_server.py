@@ -14,15 +14,22 @@ QUERY_SERVER_PORT = 50001
 AVAILABILITY_SERVER_PORT = 50002
 MAX_QUERY_SERVER_CONNECTIONS = 10
 MAX_AVAILABILITY_SERVER_CONNECTIONS = 10
+
 P2P_CERTIFICATE = retrieve_CA_certificate()
 P2P_PRIVATE = retrieved_CA_private()
-AVAILABILITY_RECORD_EXPIRATION_SECONDS = 120
-AVAILABILITY_LIST_REFRESH_SECONDS = 60
 
-# Serving Nodes List
-# TODO: IMPROVEMENT: make this into a dictionary (or set like) for lower complexity (higher performance)
+AVAILABILITY_RECORD_EXPIRATION_SECONDS = 25
+AVAILABILITY_LIST_REFRESH_SECONDS = 3 # we want to ensure fresh records but without the cost of performance
+QUERY_MIN_INTERVAL_TOLERANCE_SECONDS = 5 # to avoid intentional flooding
+QUERY_EARLY_INTERVAL_SECONDS = 10 # early query (that if justified is serviced)
+RECORDS_TO_ACQUIRE_PER_QUERY = 2
+QUERY_EARLY_MIN_FRESH_FOR_NOREPLY = 2 # if at least this number of records are still fresh according to our knowledge we won't answer the EARLY query
+
+# IMPROVEMENT: make this into a dictionary (or set like) for lower complexity (higher performance?)
 SERVING_NODE_LIST = []
 SERVING_NODE_LIST_LOCK = threading.Lock()
+QUERYING_NODE_LIST = []
+QUERYING_NODE_LIST_LOCK = threading.Lock() # There can be multiple threads trying to change this like with the serving node list
 
 # ServingNodeDict (IP address, port, timestamp) class used to "pack" a serving node record's data
 class ServingNodeDict(dict):
@@ -33,17 +40,22 @@ class ServingNodeDict(dict):
         self['port'] = serving_port # The serving ports as integer 4 bytes
         self['timestamp'] = record_timestamp # The timestamp is based on the time.time() not the crypto one since the usage here is just for record freshness
 
+class QueryingNodeDict(dict):
+    def __init__(self,querying_name,record_timestamp):
+        super().__init__()
+        self['name'] = querying_name
+        self['timestamp'] = record_timestamp
+        self['records'] = [] # list of records we returned to it last time
+
 # This function returns the number of records that will be returned to the querying node
 # The purpose of using a function for this is code modularity. Thus allowing us to make 
 # dynamic choices every time (e.g. 5 to 10 records per query), or based on some metric
 # related to a certain node (e.g. reputation, querying frequency).
-def records_to_return():
-    choice = 2
+def records_to_return(my_name):
+    choice = RECORDS_TO_ACQUIRE_PER_QUERY
     # We can't send more than we have
-    num_of_records = 0
-    global SERVING_NODE_LIST_LOCK
-    with SERVING_NODE_LIST_LOCK:
-        num_of_records = min(choice,len(SERVING_NODE_LIST))
+    my_records = len([e for e in SERVING_NODE_LIST if e['name'] == my_name])
+    num_of_records = min(choice,len(SERVING_NODE_LIST)-my_records)
     return num_of_records
 
 # Function to receive a CLIENT HELLO message of the format:
@@ -124,7 +136,8 @@ def client_hello(client_socket, client_address):
         traceback.print_exc()
         return None
 
-# Function to send a SERVER HELLO message of the format:
+# DEPRECATED (because we don't need to send server hello if the P2PCertificate is the same as the CA certificate)
+# Function to send a SERVER HELLO message of the format: 
 # [  HELLO  ] | [ServerCertificateLength] | [ServerCertificateBytes] | [Timestamp] | [SignedTimestampLength] | [SignedTimestamp]
 # [ 5 bytes ] | [    4 bytes - integer  ] | [ variable # of bytes  ] | [ 8 bytes ] | [       4 bytes       ] | [ variable size ]
 # @ params client_socket The socket to send data to
@@ -252,6 +265,7 @@ def handle_availability_client(client_socket, client_address):
 
     if(node_cert == None):
         print(f"{RED}Error: Availability server received an invalid Client Hello from {client_address}{RESET}")
+        client_socket.close()
         return
     
     # get the node availability
@@ -259,6 +273,7 @@ def handle_availability_client(client_socket, client_address):
     
     if(node_availability_record == None):
         print(f"{RED}Error: Availability server received an invalid availability record from {client_address}{RESET}")
+        client_socket.close()
         return
 
     global SERVING_NODE_LIST_LOCK
@@ -269,30 +284,158 @@ def handle_availability_client(client_socket, client_address):
         # add the new availability record to the global list
         SERVING_NODE_LIST.append(node_availability_record)
 
+    client_socket.close()
     return
 
-# Function to handle socket after accepting connection form QUERY client
+# Function to return serving records list
+
+def give_me_SERVRING_records(my_name):
+    with SERVING_NODE_LIST_LOCK:
+        goal_size = records_to_return()
+        eligible_positions = [i for i, node in enumerate(SERVING_NODE_LIST) if node['name'] != my_name ]
+        goal_size = min(goal_size,len(eligible_positions))
+        random_positions = random.sample(eligible_positions,goal_size)
+        return [ SERVING_NODE_LIST[i] for i in random_positions ]
+
+# Function to send the serving node records as a response to the client
+# @ params records The list with the records to repsond with
+# @ params client_socket The socket to output to
+# @ params client_address For debugging
+# @ params client_certificate For crypto
+def send_query_records(records,client_socket,client_address,client_certificate):
+
+    node_name = client_certificate.subject.rfc4514_string()
+    
+    if( len(records) == 0 ):
+        emptyr_msg = b"EMPTYR"
+        send_all(client_socket,emptyr_msg)
+        print(f"{RED}We have NO RECORDS to share with {client_address} aka {node_name}!{RESET}")
+        return
+
+    okrecv_msg = b"OKRECV" # prefix to the byte array to send to show to the client that indeed records will be returned
+    
+    debug_str = f"{GREEN}Sent to {client_address} aka {node_name} the following records: "
+    
+    records_byte_array = struct.pack('<I',len(records))
+    for rec in records:
+        degug_str += str(rec['ip']) + ":" + str(rec['port']) + "\n"
+        records_byte_array += struct.pack('<I',rec['ip'])
+        records_byte_array += struct.pack('<I',rec['port'])
+    debug_str += f"{RESET}"
+
+    ENC_records_byte_array = encrypt_byte_array_with_public(records_byte_array,client_certificate)
+    ENC_records_byte_array_len = struct.pack('<I',len(ENC_records_byte_array))
+    response = (
+            okrecv_msg +
+            ENC_records_byte_array_len +
+            ENC_records_byte_array
+            )
+
+    send_all(client_socket,response)
+    print(debug_str)
+    return
+
+# Function to handle socket after accepting connection from QUERY client
 # @ params client_socket The socket to talk with
 # @ params client_address The address of the client to debug
 # returns Nothing. It is fully responsible to handle the connection.
 def handle_query_client(client_socket, client_address):
 
+    print(f"{YELLOW}New peer discovery query from {client_address}{RESET}")
 
-    pass
+    # client_hello to get the node's certificate
+    node_cert = client_hello(client_socket, client_address)
+    name_field = node_cert.subject.rfc4514_string()
 
-# Function to manage the list and remove stale entries
+    if(node_cert == None):
+        print(f"{RED}Error: Peer discovery server received an invalid Client Hello from {client_address}{RESET}")
+        return
+
+    global QUERYING_NODE_LIST
+    global QUERYING_NODE_LIST_LOCK
+
+    with QUERYING_NODE_LIST_LOCK:
+
+        # retrieve the last query record from the client
+        query_node_list_record = [e for e in QUERYING_NODE_LIST if e['name'] == name_field]
+
+        if( len(query_node_list_record) == 0 ):
+            # first time
+            records = give_me_SERVRING_records(name_field)
+            # save these records for expiration validation on possible future early requests
+            my_query_node_record = QueryingNodeDict(name_field,time.time(),records)
+            QUERYING_NODE_LIST.append(my_query_node_record)
+            # OK now we can send the reply
+            send_query_records(records,client_socket,client_address,node_cert)
+        else:
+            prev = query_node_list_record[0]
+
+            # check if the query is too frequent
+            if( (time.time()) - prev['timestamp'] < QUERY_MIN_INTERVAL_TOLERANCE_SECONDS ):
+                # too frequent requests
+                too_freq_msg = b"TOOFRQ"
+                send_all(client_socket,too_freq_msg)
+                print("{RED}{name_field} @ {client_address} has requested PEERS too frequently!{RESET}")
+                client_socket.close()
+                return
+
+            # check if the request is not early
+            if( (time.time()) - prev['timestamp'] >= QUERY_EARLY_INTERVAL_SECONDS ):
+                # normal request as expected
+                records = give_me_SERVRING_records(name_field)
+                # delete previous QUERYING_NODE_LIST record
+                QUERYING_NODE_LIST = [node for node in QUERYING_NODE_LIST if node['name'] != name_field ]
+                # add the new QUERY records for the client
+                my_query_node_record = QueryingNodeDict(name_field,time.time(),records)
+                QUERYING_NODE_LIST.append(my_query_node_record)
+                # OK now send the reply back
+                send_query_records(records,client_socket,client_address,node_cert)
+            else:
+                # early request check if it makes sense (i.e. the records we sent last time are no longer in the serving list or are not fresh)
+                with SERVING_NODE_LIST_LOCK:
+                    commons = [ node for node in prev['records'] if node in SERVING_NODE_LIST ]
+                    commons_fresh_ones = 0
+                    current_time = time.time()
+                    for node in commons:
+                        if current_time - node['timestamp'] <= AVAILABILITY_RECORD_EXPIRATION_SECONDS:
+                            commons_fresh_ones+=1
+
+                    if commons_fresh_ones >= QUERY_EARLY_MIN_FRESH_FOR_NOREPLY:
+                        print(f"{RED}Early request from {name_field} @ {client_address} rejected since {commons_fresh_ones} of the PEERS we last gave to it are still fresh{RESET}")
+                        client_socket.close()
+                        return
+
+                # if we are here that means the EARLY query will be serviced
+                print(f"{GREEN}Early request from {name_field} @ {client_address} validated and accepted!{RESET}")
+                records = give_me_SERVRING_records(name_field)
+                # delete previous QUERYING_NODE_LIST record
+                QUERYING_NODE_LIST = [node for node in QUERYING_NODE_LIST if node['name'] != name_field ]
+                # add the new QUERY records for the client
+                my_query_node_record = QueryingNodeDict(name_field,time.time(),records)
+                QUERYING_NODE_LIST.append(my_query_node_record)
+                # OK now send the reply back
+                send_query_records(records,client_socket,client_address,node_cert)
+                
+    client_socket.close()
+    return
+
+# Function to manage the list and remove records from the serving node list that are not fresh
 def list_manager():
+    global SERVING_NODE_LIST_LOCK
     global SERVING_NODE_LIST
     while True:
-        # Remove entries older than 2 minutes
-        current_time = time.time()
-        SERVING_NODE_LIST = [node for node in SERVING_NODE_LIST if (current_time - node['timestamp'] <= AVAILABILITY_RECORD_EXPIRATION_SECONDS) ]
+        with SERVING_NODE_LIST_LOCK:
+            # removing entries that are not fresh
+            current_time = time.time()
+            SERVING_NODE_LIST = [node for node in SERVING_NODE_LIST if (current_time - node['timestamp'] <= AVAILABILITY_RECORD_EXPIRATION_SECONDS) ]
         time.sleep(AVAILABILITY_LIST_REFRESH_SECONDS)
 
 def accept_query_client(query_server_socket):
     while True:
+        print(f"{YELLOW}accept_query_client waiting for connection from some node...{RESET}\n",flush=True)
         query_client_socket, query_client_address = query_server_socket.accept()
-        query_client_handle_thread = threading.Thread(target=handle_quering_client, args=(query_client_socket, query_client_address))
+        print(f"{GREEN}accept_query_client received connection from some node...{RESET}",flush=True)
+        query_client_handle_thread = threading.Thread(target=handle_query_client, args=(query_client_socket, query_client_address))
         query_client_handle_thread.start()
     pass
 
