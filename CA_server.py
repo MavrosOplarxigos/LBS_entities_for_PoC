@@ -192,6 +192,8 @@ def encrypt_byte_array_with_public(byte_array,certificate):
         # https://datatracker.ietf.org/doc/html/rfc3447.html#section-7.1.1
         block_size = 190
 
+        print(f"{ORANGE}The ENCRYPT block size is {block_size} bytes.{RESET}")
+        
         enc_array = bytearray()
         input_offset = 0
 
@@ -220,6 +222,8 @@ def decrypt_byte_array_with_private(byte_array,private_key):
         # Check RFC 3447 section 7.1.2
         # https://datatracker.ietf.org/doc/html/rfc3447.html#section-7.1.2
         block_size = private_key.key_size // 8
+
+        print(f"{ORANGE}The DECRYPT block size is {block_size} bytes.{RESET}")
 
         dec_array = bytearray()
         input_offset = 0
@@ -299,7 +303,8 @@ def debug_fun2():
 
         print(f"{YELLOW}Now testing encrypt/decrypt{RESET}")
 
-        data = os.urandom(100000)
+        # data = os.urandom(100000)
+        data = os.urandom(8)
         print("The size of the initial data array is " + str(len(data)) )
     
         enc_array = encrypt_byte_array_with_public(data,CA_CERTIFICATE)
@@ -332,5 +337,6 @@ def debug_fun2():
         traceback.print_exc()
 
 if __name__ == "__main__":
+    init(autoreset=True)
     debug_fun()
     debug_fun2()

@@ -3,7 +3,8 @@ import ntplib
 from debug_colors import *
 
 # adding this offset to the current time will give us the NTP server current time
-NTP_OFFSET = None 
+NTP_OFFSET = None
+TIMESTAMP_FRESHNESS_TOLERANCE_MSEC = 2500
 
 def get_ntp_timestamp(ntp_server='time.google.com'):
     try:
@@ -37,7 +38,7 @@ def verify_timestamp_freshness(timestamp):
         after_sync_timestamp = get_local_timestamp()
         sync_delay = (after_sync_timestamp - before_sync_timestamp)
     # We tolerate at most 2.5 seconds delay (2500 msec)
-    if (get_local_timestamp() + NTP_OFFSET) - (timestamp+sync_delay) > 2500:
+    if (get_local_timestamp() + NTP_OFFSET) - (timestamp+sync_delay) > TIMESTAMP_FRESHNESS_TOLERANCE_MSEC:
         return False
     return True
 

@@ -19,24 +19,24 @@ SERVICE_SOCKET_TIMEOUT_S = 5
 def reply_INFO_byte_array():
 
     online_bytes = b"ONLINE"
-    print("online_bytes array = ",online_bytes)
+    # print("online_bytes array = ",online_bytes)
     online_bytes_string = online_bytes.decode('utf-8')
-    print("online_bytes string = ",online_bytes_string)
+    # print("online_bytes string = ",online_bytes_string)
     
     P2P_RELAY_QUERY_PORT = struct.pack('<I',QUERY_SERVER_PORT)
-    print("P2P_RELAY_QUERY_PORT byte array = ",P2P_RELAY_QUERY_PORT)
+    # print("P2P_RELAY_QUERY_PORT byte array = ",P2P_RELAY_QUERY_PORT)
     P2P_RELAY_QUERY_PORT_INT = ( struct.unpack('<I',P2P_RELAY_QUERY_PORT) )[0]
-    print("P2P_RELAY_QUERY_PORT_INT = ",P2P_RELAY_QUERY_PORT_INT)
+    # print("P2P_RELAY_QUERY_PORT_INT = ",P2P_RELAY_QUERY_PORT_INT)
 
     P2P_RELAY_AVAILABILITY_PORT = struct.pack('<I',AVAILABILITY_SERVER_PORT)
-    print("P2P_RELAY_AVAILABILITY_PORT byte array = ",P2P_RELAY_AVAILABILITY_PORT)
+    # print("P2P_RELAY_AVAILABILITY_PORT byte array = ",P2P_RELAY_AVAILABILITY_PORT)
     P2P_RELAY_AVAILABILITY_PORT_INT = (struct.unpack('<I',P2P_RELAY_AVAILABILITY_PORT))[0]
-    print("P2P_RELAY_AVAILABILITY_PORT_INT = ",P2P_RELAY_AVAILABILITY_PORT_INT)
+    # print("P2P_RELAY_AVAILABILITY_PORT_INT = ",P2P_RELAY_AVAILABILITY_PORT_INT)
 
     SIGNING_FWD_SERVER_PORT = struct.pack('I',FWD_SERVER_PORT)
-    print("SIGNING_FWD_SERVER_PORT byte array = ",SIGNING_FWD_SERVER_PORT)
+    # print("SIGNING_FWD_SERVER_PORT byte array = ",SIGNING_FWD_SERVER_PORT)
     SIGNING_FWD_SERVER_PORT_INT = (struct.unpack('<I',SIGNING_FWD_SERVER_PORT))[0]
-    print("SIGNING_FWD_SERVER_PORT_INT = ",SIGNING_FWD_SERVER_PORT_INT)
+    # print("SIGNING_FWD_SERVER_PORT_INT = ",SIGNING_FWD_SERVER_PORT_INT)
 
     info_reply = (
             online_bytes +
@@ -45,7 +45,7 @@ def reply_INFO_byte_array():
             SIGNING_FWD_SERVER_PORT
             )
 
-    print(f"The INFO reply is {RED}{info_reply}{RESET}")
+    # print(f"The INFO reply is {RED}{info_reply}{RESET}")
     return info_reply
 
 def testing_unpack_INFO(info_reply):
@@ -85,16 +85,16 @@ def reply_CRDS(client_socket,client_address):
         #NODE_NAME_LENGTH_little = struct.unpack('<i',NODE_NAME_LENGTH_bytes)[0]
         #print("LITTLE length as print ",NODE_NAME_LENGTH_little)
         NODE_NAME_LENGTH_big = struct.unpack('>i',NODE_NAME_LENGTH_bytes)[0]
-        print("NODE_NAME_LENGTH_big = ",NODE_NAME_LENGTH_big)
+        # print("NODE_NAME_LENGTH_big = ",NODE_NAME_LENGTH_big)
 
         NODE_NAME_bytes = receive_all(client_socket,NODE_NAME_LENGTH_big)
         NODE_NAME = NODE_NAME_bytes.decode('utf-8')
-        print(f"Node name form {client_address}: {NODE_NAME}")
+        # print(f"Node name form {client_address}: {NODE_NAME}")
 
         # Reply with VALID or INVLD whether the name exists in the CA or not
         if exists_name(NODE_NAME):
             send_all(client_socket,b"VALID")
-            print(f"{GREEN}The name {NODE_NAME} from {client_address} is valid!")
+            # print(f"{GREEN}The name {NODE_NAME} from {client_address} is valid!")
         else:
             send_all(client_socket,b"INVLD")
             print(f"{RED}The name {NODE_NAME} from {client_address} is not registered with the CA!{RESET}")
@@ -108,7 +108,7 @@ def reply_CRDS(client_socket,client_address):
         NODE_PRIVATE_KEY_LENGTH = struct.pack('<I',len(NODE_PRIVATE_KEY))
         private_key_data = (NODE_PRIVATE_KEY_LENGTH + NODE_PRIVATE_KEY)
         send_all(client_socket,private_key_data)
-        print(f"Private key sent to {client_address} aka {NODE_NAME}")
+        # print( f"Private key sent to {client_address} aka " + NODE_NAME )
 
         # reply structure NODE CERTIFICATE:
         # [ NODE CERTIFICATE LENGTH ] | [     NODE CERTIFICATE    ]
@@ -117,7 +117,7 @@ def reply_CRDS(client_socket,client_address):
         NODE_CERTIFICATE_LENGTH = struct.pack('<I',len(NODE_CERTIFICATE))
         certificate_data = (NODE_CERTIFICATE_LENGTH + NODE_CERTIFICATE)
         send_all(client_socket,certificate_data)
-        print(f"Node certificate sent to {client_address} aka {NODE_NAME}")
+        # print( f"Node certificate sent to {client_address} aka " + NODE_NAME )
 
         # reply structure CA CERTIFICATE:
         # [ CA CERTIFICATE LENGTH ] | [     CA CERTIFICATE    ]
@@ -126,7 +126,7 @@ def reply_CRDS(client_socket,client_address):
         CA_CERTIFICATE_LENGTH_for_node = struct.pack('<I',len(CA_CERTIFICATE_for_node))
         CA_certificate_data = (CA_CERTIFICATE_LENGTH_for_node + CA_CERTIFICATE_for_node)
         send_all(client_socket,CA_certificate_data)
-        print(f"CA certificate sent to {client_address} aka {NODE_NAME}")
+        # print( f"CA certificate sent to {client_address} aka " + NODE_NAME )
 
         # reply strucutre psuedonymous certificates/private keys
         # we have 4 psuedonymous certificates/private key pairs
@@ -144,7 +144,7 @@ def reply_CRDS(client_socket,client_address):
             NODE_PPKEY_LEN = len(NODE_PPKEY)
             packed_NODE_PPKEY_LEN = struct.pack('<I',NODE_PPKEY_LEN)
 
-            print(f"Pseudo-credentials #{i} for {NODE_NAME} have been sent.")
+            # print(f"Pseudo-credentials #{i} for {NODE_NAME} have been sent.")
 
             # sending the data (if this proves slow we might need to change the socket timeout)
             pseudo_data = ( packed_NODE_PCERT_LEN + NODE_PCERT + packed_NODE_PPKEY_LEN + NODE_PPKEY
@@ -157,29 +157,29 @@ def reply_CRDS(client_socket,client_address):
         return False
 
 def handle_client(client_socket,client_address):
-    print(f"{YELLOW}Waiting for client @ {client_address} to send a message!{RESET}",flush=True)
+    # print(f"{YELLOW}Waiting for client @ {client_address} to send a message!{RESET}",flush=True)
     client_socket.settimeout(SERVICE_SOCKET_TIMEOUT_S)
     option = receive_all(client_socket,4)
     option = option.decode('utf-8')
-    print(f"{GREEN}Received option {option} from @ {client_address}!{RESET}")
+    print(f"{YELLOW}{option} REQUEST from @ {client_address}!{RESET}")
     # INFO: sent by the client to check that the service is online and to get information
     # about the ports of the P2P relay server and the signing server
     if option == "INFO":
-        print(f"Client {client_address} requested INFO")
+        # print(f"Client {client_address} requested INFO")
         status_reply_INFO = reply_INFO(client_socket)
         if status_reply_INFO:
-            print(f"{GREEN}Reply to INFO request from {client_address} sent!{RESET}")
+            print(f"{GREEN}INFO REPLY sent to {client_address} sent SUCESSFULLY!{RESET}")
         else:
-            print(f"{RED}Reply to INFO request from {client_address} fail!{RESET}")
+            print(f"{RED}INFO REPLY to {client_address} fail!{RESET}")
     # CRDS: sent by the client when credentials are needed to be able to communicate with
     # the LBS entities.
     elif option == "CRDS":
-        print(f"Client {client_address} requested credentials.")
+        # print(f"Client {client_address} requested credentials.")
         status_reply_CRDS = reply_CRDS(client_socket,client_address)
         if status_reply_CRDS:
-            print(f"{GREEN}Reply to CRDS request from {client_address} sent!{RESET}")
+            print(f"{GREEN}CRDS REPLY sent to {client_address} SUCCESSFULLY!{RESET}")
         else:
-            print(f"{RED}Reply to CRDS request from {client_address} fail!{RESET}")
+            print(f"{RED}CRDS request REPLY to {client_address} fail!{RESET}")
     # EXTR: option for extra infromation that the client might need to request for future.
     elif option == "EXTR":
         print(f"Client {client_address} requested extra information.")
@@ -190,7 +190,7 @@ def accept_client(server_socket):
     try:
         while True:
             client_socket, client_address = server_socket.accept()
-            print(f"{YELLOW}Accepted client connection from {client_address}{RESET}",flush=True)
+            # print(f"{YELLOW}Accepted client connection from {client_address}{RESET}",flush=True)
             client_handle_thread = threading.Thread(target=handle_client, args=(client_socket, client_address,))
             client_handle_thread.start()
     except Exception as e:
@@ -226,7 +226,11 @@ def main():
     try:
 
         # Start P2P related services
-        P2Pstarter()
+        p2p_ready = P2Pstarter()
+
+        if not p2p_ready:
+            print("{RED}Error: Could not start P2P services correctly!{RESET}")
+            exit()
 
         signal.signal(signal.SIGINT, signal_handler)        
         # The main service for providing clients with necessary information to allow for the
@@ -234,7 +238,7 @@ def main():
         # user that we are online that means that all services/entities of the LBS scheme are online.
         print("Opening service socket...")
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_address = (physical_ethernet_address(), SERVICE_PORT)
+        server_address = ( get_IPv4_with_internet_access() , SERVICE_PORT)
         server_socket.bind(server_address)
         ip_address_server = socket.gethostbyname(server_address[0])
         print(f"{YELLOW}IP Address: {ip_address_server}:{server_address[1]}{RESET}")
@@ -245,7 +249,10 @@ def main():
         server_thread = threading.Thread(target=accept_client, args=(server_socket,))
         server_thread.daemon = True
         server_thread.start()
-        print(f"{GREEN}Service connection accepting thread initiated!{RESET}")
+        print(f"{GREEN}Service connection accepting thread initiated!{RESET}",flush=True)
+        time.sleep(2)
+        clear_screen_and_reset_pointer()
+        print(f"{GREEN}All system functionalities ready!{RESET}")
 
         # joining all threads so that the main thread doesn't terminate and controls
         # signal events to gracefully finish the program rather than throwing an exception

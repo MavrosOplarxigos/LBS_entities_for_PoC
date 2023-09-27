@@ -2,3 +2,4 @@ cryptography
 ntplib
 time
 colorama
+requests
