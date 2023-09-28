@@ -162,23 +162,25 @@ def sync_SS_ntp():
     print(f"{GREEN}SS: NTP sync completed!{RESET}")
 
 def SigningServerStarter():
-
-    sync_SS_ntp()
-
-    # TCP/IP SOCKETS INITIALIZATION
-    print("SS: server initiating...")
-    ss_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    ss_address = (get_IPv4_with_internet_access(), FWD_SERVER_PORT)
-    ss_socket.bing(ss_address)
-    ss_socket.listen(MAX_SS_CONNECTIONS)
-    print("{GREEN}SS: server listening!{RESET}")
-
-    # THREAD INITIALIZATION
-    print("SS: server connection thread initiating...")
-    ss_thread = threading.Thread(target=accept_ss_client, args=(ss_socket,))
-    ss_thread.daemon = True
-    ss_thread.start()
-    print(f"{GREEN}SS: server connection accepting thread started!{RESET}")
+    try:
+        sync_SS_ntp()
+        # TCP/IP SOCKETS INITIALIZATION
+        print("SS: server initiating...")
+        ss_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        ss_address = (get_IPv4_with_internet_access(), FWD_SERVER_PORT)
+        ss_socket.bind(ss_address)
+        ss_socket.listen(MAX_SS_CONNECTIONS)
+        print("{GREEN}SS: server listening!{RESET}")
+        # THREAD INITIALIZATION
+        print("SS: server connection thread initiating...")
+        ss_thread = threading.Thread(target=accept_ss_client, args=(ss_socket,))
+        ss_thread.daemon = True
+        ss_thread.start()
+        print(f"{GREEN}SS: server connection accepting thread started!{RESET}")
+        return True
+    except Exception as e:
+        print(f"{RED}SS: Could not start services: {e}{RESET}")
+        return False
 
 def main():
     
