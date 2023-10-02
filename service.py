@@ -227,12 +227,12 @@ def main():
         # Start P2P related services
         p2p_ready = P2Pstarter()
         if not p2p_ready:
-            print("{RED}Error: Could not start P2P services correctly!{RESET}")
+            print(f"{RED}Error: Could not start P2P services correctly!{RESET}")
             exit()
 
         ss_ready = SigningServerStarter()
         if not ss_ready:
-            print("{RED}Error: Could not start the SS services correctly!{RESET}")
+            print(f"{RED}Error: Could not start the SS services correctly!{RESET}")
             exit()
 
         signal.signal(signal.SIGINT, signal_handler)        

@@ -3,6 +3,13 @@ import psutil
 import time
 from debug_colors import *
 
+def byte_array_first_10_bytes_decimal(x):
+    ans = []
+    for i in range(0,min(10,len(x))):
+        byte_decimal = int(x[i])
+        ans.append( (str(byte_decimal)) )
+    return ans
+
 def all_interfaces_names():
     for interface, addrs in psutil.net_if_addrs().items():
         print(f"{GREEN}Interface Name: {interface}{RESET}")

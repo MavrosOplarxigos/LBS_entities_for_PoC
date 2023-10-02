@@ -298,7 +298,7 @@ def give_me_SERVING_records(my_name):
         goal_size = min(goal_size,len(eligible_positions))
         random_positions = random.sample(eligible_positions,goal_size)
         actual_records_to_return = [ SERVING_NODE_LIST[i] for i in random_positions ]
-        print(f"{ORANGE}Serving records to return =  {actual_records_to_return}{RESET}")
+        # print(f"{ORANGE}Serving records to return =  {actual_records_to_return}{RESET}")
         return actual_records_to_return 
 
 # Function to send the serving node records as a response to the client
@@ -333,6 +333,9 @@ def send_query_records(records,client_socket,client_address,client_certificate):
     debug_str += f"DEC_RECORDS_BYTE_ARRAY = {records_byte_array} \n"
     records_byte_array = bytes(records_byte_array)
 
+    Original_Length = len(records_byte_array)
+    Original_Length_byte_array = struct.pack('<I',Original_Length)
+
     untouched_ENC_records_byte_array = encrypt_byte_array_with_public(records_byte_array,client_certificate)
     ENC_records_byte_array = bytes( [ byte for byte in untouched_ENC_records_byte_array ] )
     debug_ENC_records = [ byte for byte in untouched_ENC_records_byte_array ]
@@ -355,11 +358,12 @@ def send_query_records(records,client_socket,client_address,client_certificate):
             okrecv_msg +
             number_of_records_field +
             ENC_records_byte_array_len +
-            ENC_records_byte_array
+            ENC_records_byte_array +
+            Original_Length_byte_array
             )
 
     send_all(client_socket,response)
-    print(debug_str)
+    # print(debug_str)
     return
 
 # Function to handle socket after accepting connection from QUERY client

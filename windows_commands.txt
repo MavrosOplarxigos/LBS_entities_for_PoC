@@ -2,5 +2,4 @@ powershell
 Write-Host $env:PYTHONUNBUFFERED
 $env:PYTHONUNBUFFERED = 1
 
-Important note: When debugging in Android studio put 1 word for tags only with caps for ease of searching
-What happens if somenode only asks for nodes to serve?
+

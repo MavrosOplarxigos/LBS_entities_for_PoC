@@ -9,6 +9,7 @@ import traceback
 import struct
 import time
 import requests
+import json
 
 FWD_SERVER_PORT = 50003
 MAX_SS_CONNECTIONS = 40 # How many signing requests will we be trying to answer simultaneously
@@ -27,7 +28,7 @@ def fullfil_URL_request(requestURL):
 
             return response.content
         else:
-            print(f"{RED}Could not fulfil the request: {requestURL} status code {response.status_code}{RESET}")
+            print(f"{RED}SS: Could not fulfil the request: {requestURL} status code {response.status_code}{RESET}")
             return None
 
     except Exception as e:
@@ -47,7 +48,8 @@ def proxy_handle(client_socket, client_address):
         serving_peer_cert_bytes = receive_all(client_socket,CERTIFICATE_LENGTH)
         SERVING_PEER_CERTIFICATE = PEMcertificate_from_DER_byte_array(serving_peer_cert_bytes)
         subject_name = SERVING_PEER_CERTIFICATE.subject.rfc4514_string()
-        print(f"PROXY request certificate of serving node has name {subject_name}")
+        
+        # print(f"PROXY request certificate of serving node has name {subject_name}")
 
         is_CA_signed = certificate_issuer_check(SERVING_PEER_CERTIFICATE, SS_CERTIFICATE)
         if not is_CA_signed:
@@ -58,16 +60,17 @@ def proxy_handle(client_socket, client_address):
         API_CALL_ENC_LENGTH = struct.unpack('>I',api_call_enc_length_bytes)[0]
         api_call_enc_sskey_bytes = receive_all(client_socket,API_CALL_ENC_LENGTH)
         API_CALL = decrypt_byte_array_with_private(api_call_enc_sskey_bytes,SS_PRIVATE)
-        print(f"PROXY request from {subject_name} carries URL: {API_CALL}")
+        STRING_API_CALL = API_CALL.decode('utf-8')
+        print(f"{MAGENTA}SS: PROXY request from {subject_name} carries URL: {STRING_API_CALL}{RESET}")
 
         timestamp_data = receive_all(client_socket,8)
         Timestamp = struct.unpack('>Q', timestamp_data)[0]
-        print(f"PROXY timestamp = {Timestamp}")
+        # print(f"PROXY timestamp = {Timestamp}")
         
         # verify the timestamp is fresh
         is_timestamp_fresh = verify_timestamp_freshness(Timestamp)
         if not is_timestamp_fresh:
-            print(f"{RED}Expired timestamp received from {subject_name}{RESET}")
+            print(f"{RED}SS: Proxy request with expired timestamp received from {subject_name}{RESET}")
             return
 
         # timestamp fresh then we move on to read the concatenated signature of the timestamp with the query
@@ -86,22 +89,26 @@ def proxy_handle(client_socket, client_address):
         is_signature_valid = verify_signature(SIGNATURE_TIMESTAMP_QUERY,concatenation,SERVING_PEER_CERTIFICATE)
 
         if not is_signature_valid:
-            print(f"{RED}The signature on the concatenated TIMESTAMP+QUERY on the PROXY request from {subject_name} @ {client_address}{RESET}")
+            print(f"{RED}SS: The signature on the concatenated TIMESTAMP+QUERY on the PROXY request from {subject_name} @ {client_address} for {STRING_API_CALL}{RESET}")
             return
 
         # the signature is valid thus we will fullfill the request
-        ANSWER_BYTE_ARRAY = fullfil_URL_request(API_CALL)
+        ANSWER_BYTE_ARRAY = fullfil_URL_request(STRING_API_CALL)
 
         if ANSWER_BYTE_ARRAY == None:
-            print(f"{RED}Could not fulfil PROXY request for {subject_name}{RESET}")
+            print(f"{RED}SS: Error: Could NOT fulfil PROXY request {STRING_API_CALL} for {subject_name}{RESET}")
             return
+
+        f10Answer = byte_array_first_10_bytes_decimal(ANSWER_BYTE_ARRAY)
+        raw_answer_len = len(ANSWER_BYTE_ARRAY)
         
         # we have the answer and we have to communicate it back to the serving peer
         # SIGNING SERVER ANSWER FORWARD phase
-        # [ENC_ANSWER_LENGTH] | [ENC_ANSWER] | [SIGNATURE_SS_QA_LEN] | [SIGNATURE_SS_QA]
+        # [ENC_ANSWER_LENGTH] | [ENC_ANSWER] | [SIGNATURE_SS_QA_LEN] | [SIGNATURE_SS_QA] | [DEC_ANSWER_LEN]
+        DEC_ANSWER_LEN = struct.pack('<I',len(ANSWER_BYTE_ARRAY))
         ENC_ANSWER = encrypt_byte_array_with_public(ANSWER_BYTE_ARRAY,SERVING_PEER_CERTIFICATE)
         ENC_ANSWER_LENGTH = struct.pack('<I',len(ENC_ANSWER))
-        concatenateQA = API_CALL + ANSWER_BYTE
+        concatenateQA = API_CALL + ANSWER_BYTE_ARRAY
         SIGNATURE_SS_QA = sign_byte_array_with_private(concatenateQA,SS_PRIVATE)
         SIGNATURE_SS_QA_LEN = struct.pack('<I',len(SIGNATURE_SS_QA))
 
@@ -109,26 +116,31 @@ def proxy_handle(client_socket, client_address):
                 ENC_ANSWER_LENGTH+
                 ENC_ANSWER+
                 SIGNATURE_SS_QA_LEN+
-                SIGNATURE_SS_QA
+                SIGNATURE_SS_QA+
+                DEC_ANSWER_LEN
                 )
 
+        ss_answer_fwd_len = len(SS_ANSWER_FWD)
+        SS_ANSWER_LEN_BYTES = struct.pack('<I',ss_answer_fwd_len)
+        send_all(client_socket,SS_ANSWER_LEN_BYTES) # 4 bytes to let the user know how long the answer will be
+
+        print(f"{MAGENTA}SS: The reply message to the {RESET}{STRING_API_CALL}{MAGENTA} from {subject_name} is {GREEN}{ss_answer_fwd_len}{MAGENTA} bytes long and the first 10 bytes of the RAW ANSWER are {GREEN}{f10Answer} {MAGENTA}and its size is {GREEN}{raw_answer_len}  {RESET}")
+
         send_all(client_socket,SS_ANSWER_FWD)
-        print(f"{GREEN}Send answer to the PROXY request from {subject_name}{RESET}")
+        print(f"{GREEN}Sent answer to the PROXY request from {subject_name}{RESET}")
         return
     except Exception as e:
-        print("{RED}Error when carrying out PROXY request from {client_address}{RESET}",e)
+        print(f"{RED}Error when carrying out PROXY request from {client_address}{RESET}",e)
         traceback.print_exc()
         return
 
 def direct_handle(client_socket, client_address):
 
-
-
     return
 
 def handle_ss_client(client_socket, client_address):
 
-    print(f"{YELLOW}SS: request from {client_address}{RESET}")
+    print(f"{MAGENTA}SS: request from {client_address}{RESET}")
 
     # checking the option
     option = receive_all(client_socket,5)
@@ -148,16 +160,16 @@ def handle_ss_client(client_socket, client_address):
 
 def accept_ss_client(server_socket):
     while True:
-        print(f"{YELLOW}accept_ss_client waiting for connection from some node...{RESET}\n",flush=True)
+        # print(f"{YELLOW}accept_ss_client waiting for connection from some node...{RESET}\n",flush=True)
         client_socket, client_address = server_socket.accept()
-        print(f"{GREEN}accepting_ss_client received connection from some node...{RESET}\n",flush=True)
+        # print(f"{GREEN}accepting_ss_client received connection from some node...{RESET}\n",flush=True)
         ss_client_handle_thread = threading.Thread(target=handle_ss_client, args=(client_socket,client_address))
         ss_client_handle_thread.start()
     pass
 
 def sync_SS_ntp():
     # Tell the ntp_helpers module to sync with the NTP server for timestamp checking
-    print("SS: NTP sync in progress...")
+    print(f"SS: NTP sync in progress...")
     ntp_sync()
     print(f"{GREEN}SS: NTP sync completed!{RESET}")
 
@@ -165,14 +177,14 @@ def SigningServerStarter():
     try:
         sync_SS_ntp()
         # TCP/IP SOCKETS INITIALIZATION
-        print("SS: server initiating...")
+        print(f"SS: server initiating...")
         ss_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         ss_address = (get_IPv4_with_internet_access(), FWD_SERVER_PORT)
         ss_socket.bind(ss_address)
         ss_socket.listen(MAX_SS_CONNECTIONS)
-        print("{GREEN}SS: server listening!{RESET}")
+        print(f"{GREEN}SS: server listening!{RESET}")
         # THREAD INITIALIZATION
-        print("SS: server connection thread initiating...")
+        print(f"SS: server connection thread initiating...")
         ss_thread = threading.Thread(target=accept_ss_client, args=(ss_socket,))
         ss_thread.daemon = True
         ss_thread.start()

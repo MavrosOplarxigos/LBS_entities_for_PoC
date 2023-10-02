@@ -192,7 +192,7 @@ def encrypt_byte_array_with_public(byte_array,certificate):
         # https://datatracker.ietf.org/doc/html/rfc3447.html#section-7.1.1
         block_size = 190
 
-        print(f"{ORANGE}The ENCRYPT block size is {block_size} bytes.{RESET}")
+        # print(f"{ORANGE}The ENCRYPT block size is {block_size} bytes.{RESET}")
         
         enc_array = bytearray()
         input_offset = 0
@@ -223,7 +223,7 @@ def decrypt_byte_array_with_private(byte_array,private_key):
         # https://datatracker.ietf.org/doc/html/rfc3447.html#section-7.1.2
         block_size = private_key.key_size // 8
 
-        print(f"{ORANGE}The DECRYPT block size is {block_size} bytes.{RESET}")
+        # print(f"{ORANGE}The DECRYPT block size is {block_size} bytes.{RESET}")
 
         dec_array = bytearray()
         input_offset = 0
