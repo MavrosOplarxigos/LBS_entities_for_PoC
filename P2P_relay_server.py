@@ -19,7 +19,7 @@ MAX_AVAILABILITY_SERVER_CONNECTIONS = 10
 P2P_CERTIFICATE = retrieve_CA_certificate()
 P2P_PRIVATE = retrieved_CA_private()
 
-AVAILABILITY_RECORD_EXPIRATION_SECONDS = 25
+AVAILABILITY_RECORD_EXPIRATION_SECONDS = 12
 AVAILABILITY_LIST_REFRESH_SECONDS = 3 # we want to ensure fresh records but without the cost of performance
 QUERY_MIN_INTERVAL_TOLERANCE_SECONDS = 5 # to avoid intentional flooding
 QUERY_EARLY_INTERVAL_SECONDS = 10 # early query (that if justified is serviced)
@@ -72,6 +72,7 @@ def client_hello(client_socket, client_address):
 
         # Receive the "HELLO" string bytes
         hello_string = receive_all(client_socket, 5)
+
         if hello_string != b"HELLO":
             print(f"{RED}Client Hello: Expected CLIENT HELLO but the HELLO identifier prefix wasn't received. Instead we received: {hello_string}{RESET}")
             return None
@@ -188,6 +189,11 @@ def get_client_availability(client_socket, client_address, node_cert):
     # [ EDISCLOSURE LEN ] | [    EDISCLOSURE  ] | [ TIMESTAMP ] | [ SIGNED TIMESTAMP LEN ] | [    SIGNED TIMESTAMP     ]
     # [       4         ] | [ EDISCLOSURE LEN ] | [     8     ] | [          4           ] | [ SIGNED TIMESTAMP LENGTH ]
 
+    # changed to:
+
+    # [ EDISCLOSURE LEN ] | [    EDISCLOSURE  ] | [ SIGNED DISCLOSURE LEN ] | [    SIGNED DISCLOSURE     ]
+    # [       4         ] | [ EDISCLOSURE LEN ] | [          4            ] | [ SIGNED DISCLOSURE LENGTH ]
+
     EncDisclosureLengthBytes = receive_all(client_socket,4)
     EncDisclosureLength = struct.unpack('>I', EncDisclosureLengthBytes)[0]
     
@@ -203,48 +209,47 @@ def get_client_availability(client_socket, client_address, node_cert):
     # print(f"Disclosure: {DiscIP}:{DiscPortInteger}")
 
     # Receive [Timestamp] (8 bytes, big-endian)
-    timestamp_data = receive_all(client_socket, 8)
-    Timestamp = struct.unpack('>Q', timestamp_data)[0]
-
+    # timestamp_data = receive_all(client_socket, 8)
+    # Timestamp = struct.unpack('>Q', timestamp_data)[0]
     # print(f"The Timestamp is = {Timestamp}")
-
     # Verify the timestamp is fresh
-    is_timestamp_fresh = verify_timestamp_freshness(Timestamp)
-    if not is_timestamp_fresh:
-        print("{RED}Expired timestamp received on client_availability from {DiscIP}!{RESET}")
-        return None
-
+    # is_timestamp_fresh = verify_timestamp_freshness(Timestamp)
+    # if not is_timestamp_fresh:
+    #    print("{RED}Expired timestamp received on client_availability from {DiscIP}!{RESET}")
+    #    return None
     # Receive [SignedTimestampLength]
-    signed_timestamp_len_data = receive_all(client_socket, 4)
-    SignedTimestampLength = struct.unpack('>I', signed_timestamp_len_data)[0]
-
+    # signed_timestamp_len_data = receive_all(client_socket, 4)
+    # SignedTimestampLength = struct.unpack('>I', signed_timestamp_len_data)[0]
     # print(f"The length of the signed timestamp is {SignedTimestampLength}")
-
     # Receive [SignedTimestamp]
-    SignedTimestamp = receive_all(client_socket, SignedTimestampLength)
-
+    # SignedTimestamp = receive_all(client_socket, SignedTimestampLength)
     # print(f"The SignedTimestamp was received!")
-
     # Verify the signature using the client certificate
-    is_signature_valid = verify_signature(SignedTimestamp, timestamp_data, node_cert)
-    if not is_signature_valid:
-        print(f"{RED}Invalid signature. Timestamp not signed correctly.{RESET}")
-        return None
+    # is_signature_valid = verify_signature(SignedTimestamp, timestamp_data, node_cert)
+    # if not is_signature_valid:
+    #    print(f"{RED}Invalid signature. Timestamp not signed correctly.{RESET}")
+    #    return None
 
     # Verify that the certificate is signed by the CA
-    # if node_cert == None:
-    #    print(
-
     is_CA_signed = certificate_issuer_check(node_cert,P2P_CERTIFICATE)
     if not is_CA_signed:
         print(f"{RED}Provided certificate is not signed by the CA.{RESET}")
         return None
 
-    # print(f"{GREEN}Disclosure timestamp passed!{RESET}")
+    # Receive & check signed disclosure
+    SignedDisclosureLengthBytes = receive_all(client_socket,4)
+    SignedDisclosureLength = struct.unpack('>I', SignedDisclosureLengthBytes)[0]
+    
+    SignedDisclosureBytes = receive_all(client_socket,SignedDisclosureLength)
+    is_signature_valid = verify_signature(SignedDisclosureBytes,Disclosure,node_cert)
 
     # Now we want to create the ServingNodeDict instance
-
     name_field = node_cert.subject.rfc4514_string()
+
+    if not is_signature_valid:
+        print(f"{RED}Invalid disclosure signature from " + name_to_CN_only(name_field) + f"{RESET}")
+        return None
+
     ip_field = DiscIP
     port_field = DiscPortInteger
     timestamp_field = time.time()
@@ -387,7 +392,7 @@ def handle_query_client(client_socket, client_address):
     global QUERYING_NODE_LIST_LOCK
 
     with QUERYING_NODE_LIST_LOCK:
-
+        
         # retrieve the last query record from the client
         query_node_list_record = [e for e in QUERYING_NODE_LIST if e['name'] == name_field]
 
@@ -402,6 +407,8 @@ def handle_query_client(client_socket, client_address):
             send_query_records(records,client_socket,client_address,node_cert)
         else:
             prev = query_node_list_record[0]
+
+            # TODO: Add check that the querying node has registered itself in the availability list
 
             # check if the query is too frequent
             if( (time.time()) - prev['timestamp'] < QUERY_MIN_INTERVAL_TOLERANCE_SECONDS ):

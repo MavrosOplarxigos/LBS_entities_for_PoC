@@ -135,7 +135,93 @@ def proxy_handle(client_socket, client_address):
         return
 
 def direct_handle(client_socket, client_address):
+    try:
+        cert_length_bytes = receive_all(client_socket,4)
+        CERTIFICATE_LENGTH = struct.unpack('>I',cert_length_bytes)[0]
 
+        querying_peer_cert_bytes = receive_all(client_socket,CERTIFICATE_LENGTH)
+        QUERYING_PEER_CERTIFICATE = PEMcertificate_from_DER_byte_array(querying_peer_cert_bytes)
+        subject_name = QUERYING_PEER_CERTIFICATE.subject.rfc4514_string()
+
+        is_CA_signed = certificate_issuer_check(QUERYING_PEER_CERTIFICATE, SS_CERTIFICATE)
+        if not is_CA_signed:
+            print(f"{RED}Provided certificate from {client_address} for DIRECT request is not signed by the CA.{RESET}")
+            return
+
+        api_call_enc_length_bytes = receive_all(client_socket,4)
+        API_CALL_ENC_LENGTH = struct.unpack('>I',api_call_enc_length_bytes)[0]
+        api_call_enc_sskey_bytes = receive_all(client_socket,API_CALL_ENC_LENGTH)
+        API_CALL = decrypt_byte_array_with_private(api_call_enc_sskey_bytes,SS_PRIVATE)
+        STRING_API_CALL = API_CALL.decode('utf-8')
+        print(f"{MAGENTA}SS: DIRECT request from {subject_name} carries URL: {STRING_API_CALL}{RESET}")
+
+        timestamp_data = receive_all(client_socket,8)
+        Timestamp = struct.unpack('>Q', timestamp_data)[0]
+        
+        # verify the timestamp is fresh
+        is_timestamp_fresh = verify_timestamp_freshness(Timestamp)
+        if not is_timestamp_fresh:
+            print(f"{RED}SS: Direct request with expired timestamp received from {subject_name}{RESET}")
+            return
+
+        signature_tq_len_bytes = receive_all(client_socket,4)
+        SIGNATURE_TQ_LEN = struct.unpack('>I',signature_tq_len_bytes)[0]
+
+        signature_timestamp_query_bytes = receive_all(client_socket,SIGNATURE_TQ_LEN)
+        SIGNATURE_TIMESTAMP_QUERY = signature_timestamp_query_bytes # might have to revert the endianess for this one to work
+
+        # now we verify the signature based on the qurying peer certificate
+        # (the querying peer has generated this signature using its private key)
+        
+        # might have to revert the endianess for timestamp_data
+        concatenation = timestamp_data + API_CALL
+        is_signature_valid = verify_signature(SIGNATURE_TIMESTAMP_QUERY,concatenation,QUERYING_PEER_CERTIFICATE)
+
+        if not is_signature_valid:
+            print(f"{RED}SS: The signature on the concatenated TIMESTAMP+QUERY on the DIRECT request from {subject_name} @ {client_address} for {STRING_API_CALL}{RESET}")
+            return
+
+        # the signature is valid thus we will fullfill the request
+        ANSWER_BYTE_ARRAY = fullfil_URL_request(STRING_API_CALL)
+
+        if ANSWER_BYTE_ARRAY == None:
+            print(f"{RED}SS: Error: Could NOT fulfil DIRECT request {STRING_API_CALL} for {subject_name}{RESET}")
+            return
+
+        f10Answer = byte_array_first_10_bytes_decimal(ANSWER_BYTE_ARRAY)
+        raw_answer_len = len(ANSWER_BYTE_ARRAY)
+        
+        # we have the answer and we have to communicate it back to the serving peer
+        # SIGNING SERVER ANSWER FORWARD phase
+        # [ENC_ANSWER_LENGTH] | [ENC_ANSWER] | [SIGNATURE_SS_QA_LEN] | [SIGNATURE_SS_QA] | [DEC_ANSWER_LEN]
+        DEC_ANSWER_LEN = struct.pack('<I',len(ANSWER_BYTE_ARRAY))
+        ENC_ANSWER = encrypt_byte_array_with_public(ANSWER_BYTE_ARRAY,QUERYING_PEER_CERTIFICATE)
+        ENC_ANSWER_LENGTH = struct.pack('<I',len(ENC_ANSWER))
+        concatenateQA = API_CALL + ANSWER_BYTE_ARRAY
+        SIGNATURE_SS_QA = sign_byte_array_with_private(concatenateQA,SS_PRIVATE)
+        SIGNATURE_SS_QA_LEN = struct.pack('<I',len(SIGNATURE_SS_QA))
+
+        SS_ANSWER_FWD = (
+                ENC_ANSWER_LENGTH+
+                ENC_ANSWER+
+                SIGNATURE_SS_QA_LEN+
+                SIGNATURE_SS_QA+
+                DEC_ANSWER_LEN
+                )
+
+        ss_answer_fwd_len = len(SS_ANSWER_FWD)
+        SS_ANSWER_LEN_BYTES = struct.pack('<I',ss_answer_fwd_len)
+        send_all(client_socket,SS_ANSWER_LEN_BYTES) # 4 bytes to let the user know how long the answer will be
+
+        print(f"{MAGENTA}SS: The reply message to the {RESET}{STRING_API_CALL}{MAGENTA} from {subject_name} is {GREEN}{ss_answer_fwd_len}{MAGENTA} bytes long and the first 10 bytes of the RAW ANSWER are {GREEN}{f10Answer} {MAGENTA}and its size is {GREEN}{raw_answer_len}  {RESET}")
+
+        send_all(client_socket,SS_ANSWER_FWD)
+        print(f"{GREEN}Sent answer to the DIRECT request from {subject_name}{RESET}")
+        return
+    except Exception as e:
+        print(f"{RED}Error when carrying out DIRECT request from {client_address}{RESET}",e)
+        traceback.print_exc()
+        return
     return
 
 def handle_ss_client(client_socket, client_address):
