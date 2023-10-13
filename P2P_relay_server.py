@@ -66,7 +66,7 @@ def records_to_return(my_name):
 # @ params client_socket The socket to receive the data from
 # @ params client_address The address of the client for debug messages
 # @ returns x509 certificate of cryptography module
-def client_hello(client_socket, client_address):
+def client_hello(client_socket, client_address, is_availability):
     try:
         # print(f"Client Hello from {client_address}")
 
@@ -133,7 +133,10 @@ def client_hello(client_socket, client_address):
             return None
 
         # print(f"{GREEN}Client Hello message successfully received and verified from: {subject_name} / {client_address}.{RESET}")
-        return client_certificate
+        if not is_availability:
+            return client_certificate
+        else:
+            return (client_certificate,timestamp_data)
     except Exception as e:
         print("Error CLIENT HELLO:",e)
         traceback.print_exc()
@@ -184,15 +187,15 @@ def server_hello(client_socket, client_address):
 # @ params client_address For debugging messages
 # @ params node_cert The certificate to check the signature of the data with
 # @ returns ServingNodeDict object constructed from received data to be added in the SERVING_NODE_LIST
-def get_client_availability(client_socket, client_address, node_cert):
+def get_client_availability(client_socket, client_address, node_cert, timestamp_data):
 
     # [ EDISCLOSURE LEN ] | [    EDISCLOSURE  ] | [ TIMESTAMP ] | [ SIGNED TIMESTAMP LEN ] | [    SIGNED TIMESTAMP     ]
     # [       4         ] | [ EDISCLOSURE LEN ] | [     8     ] | [          4           ] | [ SIGNED TIMESTAMP LENGTH ]
 
     # changed to:
 
-    # [ EDISCLOSURE LEN ] | [    EDISCLOSURE  ] | [ SIGNED DISCLOSURE LEN ] | [    SIGNED DISCLOSURE     ]
-    # [       4         ] | [ EDISCLOSURE LEN ] | [          4            ] | [ SIGNED DISCLOSURE LENGTH ]
+    # [ EDISCLOSURE LEN ] | [    EDISCLOSURE  ] | [ SIGNED DISCLOSURE || timestamp LEN ] | [    SIGNED DISCLOSURE                  ]
+    # [       4         ] | [ EDISCLOSURE LEN ] | [          4                         ] | [ SIGNED DISCLOSURE || timestamp LENGTH ]
 
     EncDisclosureLengthBytes = receive_all(client_socket,4)
     EncDisclosureLength = struct.unpack('>I', EncDisclosureLengthBytes)[0]
@@ -239,9 +242,11 @@ def get_client_availability(client_socket, client_address, node_cert):
     # Receive & check signed disclosure
     SignedDisclosureLengthBytes = receive_all(client_socket,4)
     SignedDisclosureLength = struct.unpack('>I', SignedDisclosureLengthBytes)[0]
-    
     SignedDisclosureBytes = receive_all(client_socket,SignedDisclosureLength)
-    is_signature_valid = verify_signature(SignedDisclosureBytes,Disclosure,node_cert)
+    concatenation = timestamp_data + Disclosure
+
+    # here we want to concatenate the timestamp_data with the Disclosure to get the signature right
+    is_signature_valid = verify_signature(SignedDisclosureBytes,concatenation,node_cert)
 
     # Now we want to create the ServingNodeDict instance
     name_field = node_cert.subject.rfc4514_string()
@@ -268,7 +273,7 @@ def handle_availability_client(client_socket, client_address):
     print(f"{YELLOW}New availability disclosure from {client_address}{RESET}",flush=True)
 
     # client hello to get the node's certificate
-    node_cert = client_hello(client_socket, client_address)
+    node_cert, timestamp_data = client_hello(client_socket, client_address, True)
 
     if(node_cert == None):
         print(f"{RED}Error: Availability server received an invalid Client Hello from {client_address}{RESET}")
@@ -276,7 +281,7 @@ def handle_availability_client(client_socket, client_address):
         return
     
     # get the node availability
-    node_availability_record = get_client_availability(client_socket, client_address, node_cert)
+    node_availability_record = get_client_availability(client_socket, client_address, node_cert, timestamp_data)
     
     if(node_availability_record == None):
         print(f"{RED}Error: Availability server received an invalid availability record from {client_address}{RESET}")
@@ -380,7 +385,7 @@ def handle_query_client(client_socket, client_address):
     print(f"{YELLOW}New peer discovery query from {client_address}{RESET}",flush=True)
 
     # client_hello to get the node's certificate
-    node_cert = client_hello(client_socket, client_address)
+    node_cert = client_hello(client_socket, client_address, False)
 
     if(node_cert == None):
         print(f"{RED}Error: Peer discovery server received an invalid Client Hello from {client_address}{RESET}")
