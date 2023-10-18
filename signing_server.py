@@ -2,6 +2,7 @@ from tcp_helpers import *
 from ntp_helpers import *
 from CA_server import *
 from debug_colors import *
+from caching import *
 
 import socket
 import threading
@@ -14,11 +15,26 @@ import SharedVarsExperiment
 
 FWD_SERVER_PORT = 50003
 MAX_SS_CONNECTIONS = 40 # How many signing requests will we be trying to answer simultaneously
-
 SS_CERTIFICATE = retrieve_CA_certificate()
 SS_PRIVATE = retrieved_CA_private()
+TRIED_LOADING_CACHE = 0
 
 def fullfil_URL_request(requestURL):
+    
+    global TRIED_LOADING_CACHE
+    if not TRIED_LOADING_CACHE:
+        loaded = caching.data_loading()
+        if not loaded:
+            print(f"{RED}Error: Could not load cache!{RESET}")
+        else:
+            print(f"{GREEN}Cache loaded successfully!{RESET}")
+        TRIED_LOADING_CACHE = 1
+
+    cached_record = caching.data_record_retrieve(requestURL)
+    if cached_record != None:
+        print(f"{GREEN}Cache HIT: {requestURL}{RESET}")
+        return cached_record
+
     try:
         response = requests.get(requestURL)
         if response.status_code == 200:
@@ -26,6 +42,13 @@ def fullfil_URL_request(requestURL):
             # checking that we got a valid JSON format
             # if not an exception json.JSONDecodeError will be thrown
             json_data = json.loads(response.content)
+
+            try:
+                print(f"{RED}Cache MISS: {requestURL}{RESET}")
+                caching.data_write(requestURL,response.content)
+                caching.data_saving()
+            except Exception as e:
+                print(f"{RED}Error: Could not save the Cache file!{RESET}")
 
             return response.content
         else:
