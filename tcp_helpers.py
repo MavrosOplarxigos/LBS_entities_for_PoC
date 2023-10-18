@@ -39,9 +39,10 @@ def try_address_internet(my_address,debug_name):
             time.sleep(2)
             client_socket.close()
             INTERNET_CONNECTED_IPv4 = my_address
+            print(f"{GREEN}Used the {debug_name} to connect to the Internet{RESET}")
             return True
         except Exception as e:
-            print(f"{ORANGE}Could not connect to {site_address} because of " + str(e) + "{RESET}")
+            print(f"{ORANGE}Could not connect to {site_address} because of " + str(e) + f"{RESET}")
             continue
     print(f"{RED}Could not use the {debug_name} to connect to the Internet{RESET}")
     return False
@@ -93,6 +94,20 @@ def receive_all(sock, size):
         data += chunk
     return data
 
+def blocking_receive_all(sock,size):
+    original_timeout = sock.gettimeout()
+    sock.settimeout(None)
+    data = b''
+    try:
+        while len(data) < size:
+            chunk = sock.recv(size - len(data))
+            if not chunk:
+                raise EOFError("Receiving: Socket connection broken.")
+            data += chunk
+    finally:
+        sock.settimeout(original_data)
+    return data
+
 def send_all(sock,data):
     total_bytes_sent = 0
     while total_bytes_sent < len(data):
@@ -100,6 +115,10 @@ def send_all(sock,data):
         if sent == 0:
             raise RuntimeError("Sending: Socket connection broken.")
         total_bytes_sent += sent
+
+def send_to_all_client_sockets(sockets,data):
+    for client_socket in sockets:
+        send_all(client_socket,data)
 
 def close_connection(client_socket, client_address):
     print(f"Connection with {client_address} closed.")

@@ -3,6 +3,7 @@ from ntp_helpers import *
 from CA_server import *
 from debug_colors import *
 
+import SharedVarsExperiment
 import socket
 import threading
 import traceback
@@ -23,7 +24,6 @@ AVAILABILITY_RECORD_EXPIRATION_SECONDS = 12
 AVAILABILITY_LIST_REFRESH_SECONDS = 3 # we want to ensure fresh records but without the cost of performance
 QUERY_MIN_INTERVAL_TOLERANCE_SECONDS = 5 # to avoid intentional flooding
 QUERY_EARLY_INTERVAL_SECONDS = 10 # early query (that if justified is serviced)
-RECORDS_TO_ACQUIRE_PER_QUERY = 2
 QUERY_EARLY_MIN_FRESH_FOR_NOREPLY = 2 # if at least this number of records are still fresh according to our knowledge we won't answer the EARLY query
 
 # IMPROVEMENT: make this into a dictionary (or set like) for lower complexity (higher performance?)
@@ -53,7 +53,8 @@ class QueryingNodeDict(dict):
 # dynamic choices every time (e.g. 5 to 10 records per query), or based on some metric
 # related to a certain node (e.g. reputation, querying frequency).
 def records_to_return(my_name):
-    choice = RECORDS_TO_ACQUIRE_PER_QUERY
+    print(f"{MAGENTA}Records to acquire per query = {SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY}{RESET}",flush=True)
+    choice = SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY
     # We can't send more than we have
     my_records = len([e for e in SERVING_NODE_LIST if e['name'] == my_name])
     num_of_records = min(choice,len(SERVING_NODE_LIST)-my_records)
@@ -416,7 +417,7 @@ def handle_query_client(client_socket, client_address):
             # TODO: Add check that the querying node has registered itself in the availability list
 
             # check if the query is too frequent
-            if( (time.time()) - prev['timestamp'] < QUERY_MIN_INTERVAL_TOLERANCE_SECONDS ):
+            if( ((time.time()) - prev['timestamp'] < QUERY_MIN_INTERVAL_TOLERANCE_SECONDS) and (SharedVarsExperiment.OVERRIDE_AVAILABILITY_CHECKS_ON_EARLY_REASKS == 0) ):
                 # too frequent requests
                 too_freq_msg = b"TOOFRQ"
                 send_all(client_socket,too_freq_msg)
@@ -425,7 +426,7 @@ def handle_query_client(client_socket, client_address):
                 return
 
             # check if the request is not early
-            if( (time.time()) - prev['timestamp'] >= QUERY_EARLY_INTERVAL_SECONDS ):
+            if( ((time.time()) - prev['timestamp'] >= QUERY_EARLY_INTERVAL_SECONDS) or (SharedVarsExperiment.OVERRIDE_AVAILABILITY_CHECKS_ON_EARLY_REASKS == 1) ):
                 # normal request as expected
                 records = give_me_SERVING_records(name_field)
                 # delete previous QUERYING_NODE_LIST record

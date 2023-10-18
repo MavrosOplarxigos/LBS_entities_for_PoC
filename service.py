@@ -1,6 +1,8 @@
 # This file will manage the different entities and provide support information to the users.
 import signal
 import sys
+import threading
+import SharedVarsExperiment
 from colorama import init, Fore
 from P2P_relay_server import *
 from ntp_helpers import *
@@ -12,6 +14,138 @@ from tcp_helpers import *
 SERVICE_PORT = 55444 # This port should be hardcoded in the Android site
 MAX_SERVICE_CONNECTIONS = 10
 SERVICE_SOCKET_TIMEOUT_S = 5
+
+# Experiment configuration
+# orchestation
+EXPERIMENT_READY_PARTICIPANTS_LOCK = threading.Lock()
+EXPERIMENT_PARTICIPANTS_COUNTER = 0
+EXPERIMENT_PARTICIPANTS_SOCKETS = []
+EXPERIMENT_START_EXPECTED_PARTICIPANTS = 1
+IS_EXPERIMENT = False
+
+# specifics
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN = 0
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX = 100
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 25
+# PARTICIPANTS_MIN = 3
+# PARTICIPANTS_MAX = 3 # Number of max devices that we want to have
+# PARTICIPANT_INTERVAL = 1 # How many participants do we jump per experiment
+SHOULD_PEER_REASK = 0
+RECORDS_TO_ACQUIRE_MIN = 3
+RECORDS_TO_ACQUIRE_MAX = 3
+QUERIES_PER_EXPERIMENT = 5
+
+import pandas as pd
+import matplotlib.pyplot as plt
+data_filename = "experiment_data.txt"
+
+def analysis_generate_graph():
+    # Initialize variables to store data
+    line_data = {}  # Dictionary to store data for each line
+    colors = plt.cm.viridis(range(0, 256, 256 // 10))  # Generate a set of distinct colors
+    markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'H', '<', '>']
+    # Read data from the file
+    with open(data_filename, "r") as file:
+        for line in file:
+            line_number, x, y = map(float, line.split())
+            if line_number not in line_data:
+                line_data[line_number] = {"x": [], "y": []}
+            line_data[line_number]["x"].append(x)
+            line_data[line_number]["y"].append(y)
+    # Create a plot with different colors for each line
+    for line_number, data in line_data.items():
+        plt.plot(data["x"], data["y"], label=f'Peer records = {line_number}', color=colors[int(line_number) % len(colors)], marker=markers[ int(line_number) % len(markers) ] )
+    # Add labels, legend, and title
+    plt.xlabel('Percent Probability of Service')
+    plt.ylabel('Peer-Hit Ratio')
+    plt.legend()
+    plt.title('Data Points from File')
+    # Save the plot to a picture file (e.g., PNG)
+    plt.savefig('test_plot.png')
+    # Display the plot (optional)
+    plt.show()
+
+def analysis_clear_data_file():
+    with open(data_filename,"w") as file:
+        pass
+        return
+
+def analysis_write_point(records_returned_line,answer_prob,total,direct):
+    with open(data_filename,"a") as file:
+        peer_hit_ratio = (float)(total-direct) / (float)(total)
+        to_write = f"{records_returned_line} {answer_prob} {peer_hit_ratio}"
+        file.write(to_write)
+    return
+
+def experiment_counters_reset():
+    SharedVarsExperiment.SS_REQUESTS_RECEIVED = 0
+    SharedVarsExperiment.SS_REQUESTS_DIRECT = 0
+
+def start_experiment():
+
+    analysis_clear_data_file()
+    global EXPERIMENT_PARTICIPANTS_SOCKETS
+    global SHOULD_PEER_REASK
+    global RECORDS_TO_ACQUIRE_MIN
+    global RECORDS_TO_ACQUIRE_MAX
+    global QUERIES_PER_EXPERIMENT
+    global EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN
+    global EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX
+    global EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL
+    global EXPERIMENT_READY_PARTICIPANTS_LOCK
+    global EXPERIMENT_PARTICIPANTS_COUNTER
+    global EXPERIMENT_PARTICIPANTS_SOCKETS
+    global EXPERIMENT_START_EXPECTED_PARTICIPANTS
+    global IS_EXPERIMENT
+
+    print(f"{CYAN}Experiments will start in 5 seconds!{RESET}")
+    for i in range(4):
+        print(f"{CYAN}Experiments start in {5-i-1} seconds!{RESET}")
+        time.sleep(1)
+    print(f"{GREEN}Experiments running!{RESET}")
+
+    # send the number of experiments
+    number_of_experiments = (int)( ((RECORDS_TO_ACQUIRE_MAX-RECORDS_TO_ACQUIRE_MIN)+1) * ((EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX-EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN)/EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL) )
+    print(f"{CYAN}We will run {number_of_experiments} experiments!{RESET}",flush=True)
+    NUMBER_OF_EXPERIMENTS_BYTES = struct.pack('<I',(int)(number_of_experiments))
+    send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,NUMBER_OF_EXPERIMENTS_BYTES)
+
+    experiment_counter = 0
+    for RECS_TO_GET in range(RECORDS_TO_ACQUIRE_MIN,RECORDS_TO_ACQUIRE_MAX+1):
+        for ANS_PROB in range(EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN,EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX+1,EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL):
+
+            # Configure the variables and communicate configuration to the receiving client
+            SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECS_TO_GET
+            SharedVarsExperiment.OVERRIDE_AVAILABILITY_CHECKS_ON_EARLY_REASKS = 1
+            experiment_counter+=1
+            ANS_PROB_BYTES = struct.pack('<I',(int)( ANS_PROB ) )
+            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,ANS_PROB_BYTES)
+            REASK_BYTES = b"YES" if (SHOULD_PEER_REASK>0) else b"NOP"
+            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,REASK_BYTES)
+            QUERIES_PER_EXPERIMENT_BYTES = struct.pack('<I',(int)( QUERIES_PER_EXPERIMENT) )
+            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,QUERIES_PER_EXPERIMENT_BYTES)
+
+            # reset the counters of the experiment
+            experiment_counters_reset()
+
+            print(f"{CYAN}Now on experiment #{experiment_counter}\n" +
+                    "Serving peer records receiveds per query = {RECS_TO_GET}\n" +
+                    "Serving probability = {ANS_PROB}%\n"
+                    +"{RESET}",flush=True)
+
+            # send the signal to start
+            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,b"START")
+
+            # wait for all of the partiicipants to send back that they have finished
+            for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
+                is_finished = blocking_receive_all(client_socket,4)
+                # let's not check what kind of string we receive just get 4 bytes
+
+            analysis_write_point(RECS_TO_GET,ANS_PROB,SharedVarsExperiment.SS_REQUESTS_RECEIVED,SharedVarsExperiment.SS_REQUESTS_DIRECT)
+
+    analysis_generate_graph()
+
+    return
 
 # Reply to INFO Strucutre:
 # [ONLINE] | [P2P_RELAY_QUERY_PORT] | [P2P_RELAY_AVAILABILITY_PORT] | [SIGNING_FWD_SERVER_PORT]
@@ -157,34 +291,54 @@ def reply_CRDS(client_socket,client_address):
         return False
 
 def handle_client(client_socket,client_address):
-    # print(f"{YELLOW}Waiting for client @ {client_address} to send a message!{RESET}",flush=True)
-    client_socket.settimeout(SERVICE_SOCKET_TIMEOUT_S)
-    option = receive_all(client_socket,4)
-    option = option.decode('utf-8')
-    print(f"{YELLOW}{option} REQUEST from @ {client_address}!{RESET}")
-    # INFO: sent by the client to check that the service is online and to get information
-    # about the ports of the P2P relay server and the signing server
-    if option == "INFO":
-        # print(f"Client {client_address} requested INFO")
-        status_reply_INFO = reply_INFO(client_socket)
-        if status_reply_INFO:
-            print(f"{GREEN}INFO REPLY sent to {client_address} sent SUCESSFULLY!{RESET}")
-        else:
-            print(f"{RED}INFO REPLY to {client_address} fail!{RESET}")
-    # CRDS: sent by the client when credentials are needed to be able to communicate with
-    # the LBS entities.
-    elif option == "CRDS":
-        # print(f"Client {client_address} requested credentials.")
-        status_reply_CRDS = reply_CRDS(client_socket,client_address)
-        if status_reply_CRDS:
-            print(f"{GREEN}CRDS REPLY sent to {client_address} SUCCESSFULLY!{RESET}")
-        else:
-            print(f"{RED}CRDS request REPLY to {client_address} fail!{RESET}")
-    # EXTR: option for extra infromation that the client might need to request for future.
-    elif option == "EXTR":
-        print(f"Client {client_address} requested extra information.")
-    client_socket.close()
-    return
+    try:
+        # print(f"{YELLOW}Waiting for client @ {client_address} to send a message!{RESET}",flush=True)
+        client_socket.settimeout(SERVICE_SOCKET_TIMEOUT_S)
+        option = receive_all(client_socket,4)
+        option = option.decode('utf-8')
+        print(f"{YELLOW}{option} REQUEST from @ {client_address}!{RESET}",flush=True)
+        # INFO: sent by the client to check that the service is online and to get information
+        # about the ports of the P2P relay server and the signing server
+        if option == "INFO":
+            # print(f"Client {client_address} requested INFO")
+            status_reply_INFO = reply_INFO(client_socket)
+            if status_reply_INFO:
+                print(f"{GREEN}INFO REPLY sent to {client_address} sent SUCESSFULLY!{RESET}")
+            else:
+                print(f"{RED}INFO REPLY to {client_address} fail!{RESET}")
+        # CRDS: sent by the client when credentials are needed to be able to communicate with
+        # the LBS entities.
+        elif option == "CRDS":
+            # print(f"Client {client_address} requested credentials.")
+            status_reply_CRDS = reply_CRDS(client_socket,client_address)
+            if status_reply_CRDS:
+                print(f"{GREEN}CRDS REPLY sent to {client_address} SUCCESSFULLY!{RESET}")
+            else:
+                print(f"{RED}CRDS request REPLY to {client_address} fail!{RESET}")
+        elif option == "EXPR":
+            # a client declares readiness to join an experiment
+            global IS_EXPERIMENT
+            if not IS_EXPERIMENT:
+                print(f"{CYAN}Closing experiment socket with {client_address}{RESET}")
+                client_socket.close()
+                return
+            global EXPERIMENT_READY_PARTICIPANTS_LOCK
+            with EXPERIMENT_READY_PARTICIPANTS_LOCK:
+                global EXPERIMENT_PARTICIPANTS_COUNTER
+                EXPERIMENT_PARTICIPANTS_COUNTER += 1
+                global EXPERIMENT_PARTICIPANTS_SOCKETS
+                EXPERIMENT_PARTICIPANTS_SOCKETS.append(client_socket)
+                if EXPERIMENT_PARTICIPANTS_COUNTER == EXPERIMENT_START_EXPECTED_PARTICIPANTS:
+                    experiment_thread = threading.Thread(target=start_experiment)
+                    experiment_thread.daemon = True
+                    experiment_thread.start()
+                # since we don't want to close this socket we will return
+                return
+        client_socket.close()
+        return
+    except Exception as e:
+        print(f"{RED}Error with connection from client to the service orchestrator{RESET}",flush=True)
+        return
 
 def accept_client(server_socket):
     try:
@@ -221,7 +375,18 @@ def inits():
     print(f"{GREEN}CA credentials retrieved!{RESET}")
 
 def main():
+
     inits()
+    
+    # check if it is experiment
+    global IS_EXPERIMENT
+    IS_EXPERIMENT = (True if '-E' in sys.argv else False)
+
+    if IS_EXPERIMENT:
+        print(f"{CYAN}It {GREEN}is{CYAN} experiment mode!{RESET}")
+    else:
+        print(f"{CYAN}It {GREEN}is not{CYAN} experiment mode!{RESET}")
+
     try:
 
         # Start P2P related services

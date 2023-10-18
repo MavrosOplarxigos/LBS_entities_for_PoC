@@ -10,6 +10,7 @@ import struct
 import time
 import requests
 import json
+import SharedVarsExperiment
 
 FWD_SERVER_PORT = 50003
 MAX_SS_CONNECTIONS = 40 # How many signing requests will we be trying to answer simultaneously
@@ -231,6 +232,8 @@ def handle_ss_client(client_socket, client_address):
     # checking the option
     option = receive_all(client_socket,5)
 
+    SharedVarsExperiment.SS_REQUESTS_RECEIVED += 1
+
     # PROXY: a serving node is requesting the fields for replying to a querying node
     if option == b"PROXY":
         proxy_handle(client_socket,client_address)
@@ -238,6 +241,7 @@ def handle_ss_client(client_socket, client_address):
 
     # DIREC: a querying node couldn't find any peers and it has to directly query the ss
     if option == b"DIREC":
+        SharedVarsExperiment.SS_REQUESTS_DIRECT += 1
         direct_handle(client_socket,client_address)
         return
 
