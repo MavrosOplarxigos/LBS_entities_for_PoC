@@ -20,22 +20,23 @@ SS_PRIVATE = retrieved_CA_private()
 TRIED_LOADING_CACHE = 0
 
 def fullfil_URL_request(requestURL):
-    
+
     global TRIED_LOADING_CACHE
     if not TRIED_LOADING_CACHE:
-        loaded = caching.data_loading()
+        loaded = data_loading()
         if not loaded:
             print(f"{RED}Error: Could not load cache!{RESET}")
         else:
-            print(f"{GREEN}Cache loaded successfully!{RESET}")
+            print(f"{GREEN}First time: Cache loaded successfully!{RESET}")
         TRIED_LOADING_CACHE = 1
 
-    cached_record = caching.data_record_retrieve(requestURL)
+    cached_record = data_record_retrieve(requestURL)
     if cached_record != None:
-        print(f"{GREEN}Cache HIT: {requestURL}{RESET}")
+        # print(f"{GREEN}Cache HIT: {requestURL}{RESET}")
         return cached_record
 
     try:
+        print(f"{RED}Cache MISS: {requestURL}{RESET}")
         response = requests.get(requestURL)
         if response.status_code == 200:
 
@@ -43,12 +44,18 @@ def fullfil_URL_request(requestURL):
             # if not an exception json.JSONDecodeError will be thrown
             json_data = json.loads(response.content)
 
+            # we are going to try and append the record to our dictionary first
             try:
-                print(f"{RED}Cache MISS: {requestURL}{RESET}")
-                caching.data_write(requestURL,response.content)
-                caching.data_saving()
+                data_write(requestURL,response.content)
+                print(f"{GREEN}Success the new record was written on the data dictionary{RESET}")
             except Exception as e:
-                print(f"{RED}Error: Could not save the Cache file!{RESET}")
+                print(f"{RED}Error: Could not write in the data dictionary the new records: {e}!{RESET}")
+
+            try:
+                data_saving()
+                print(f"{GREEN}Success new records cache file saved!{RESET}")
+            except Exception as e:
+                print(f"{RED}Error: Could not save the Cache file: {e}!{RESET}")
 
             return response.content
         else:
@@ -85,7 +92,7 @@ def proxy_handle(client_socket, client_address):
         api_call_enc_sskey_bytes = receive_all(client_socket,API_CALL_ENC_LENGTH)
         API_CALL = decrypt_byte_array_with_private(api_call_enc_sskey_bytes,SS_PRIVATE)
         STRING_API_CALL = API_CALL.decode('utf-8')
-        print(f"{MAGENTA}SS: PROXY request from {subject_name} carries URL: {STRING_API_CALL}{RESET}")
+        # print(f"{MAGENTA}SS: PROXY request from {subject_name} carries URL: {STRING_API_CALL}{RESET}")
 
         timestamp_data = receive_all(client_socket,8)
         Timestamp = struct.unpack('>Q', timestamp_data)[0]
@@ -148,7 +155,7 @@ def proxy_handle(client_socket, client_address):
         SS_ANSWER_LEN_BYTES = struct.pack('<I',ss_answer_fwd_len)
         send_all(client_socket,SS_ANSWER_LEN_BYTES) # 4 bytes to let the user know how long the answer will be
 
-        print(f"{MAGENTA}SS: The reply message to the {RESET}{STRING_API_CALL}{MAGENTA} from {subject_name} is {GREEN}{ss_answer_fwd_len}{MAGENTA} bytes long and the first 10 bytes of the RAW ANSWER are {GREEN}{f10Answer} {MAGENTA}and its size is {GREEN}{raw_answer_len}  {RESET}")
+        # print(f"{MAGENTA}SS: The reply message to the {RESET}{STRING_API_CALL}{MAGENTA} from {subject_name} is {GREEN}{ss_answer_fwd_len}{MAGENTA} bytes long and the first 10 bytes of the RAW ANSWER are {GREEN}{f10Answer} {MAGENTA}and its RAW size is {GREEN}{raw_answer_len}{RESET}",flush=True)
 
         send_all(client_socket,SS_ANSWER_FWD)
         print(f"{GREEN}Sent answer to the PROXY request from {subject_name}{RESET}")
@@ -177,7 +184,7 @@ def direct_handle(client_socket, client_address):
         api_call_enc_sskey_bytes = receive_all(client_socket,API_CALL_ENC_LENGTH)
         API_CALL = decrypt_byte_array_with_private(api_call_enc_sskey_bytes,SS_PRIVATE)
         STRING_API_CALL = API_CALL.decode('utf-8')
-        print(f"{MAGENTA}SS: DIRECT request from {subject_name} carries URL: {STRING_API_CALL}{RESET}")
+        # print(f"{MAGENTA}SS: DIRECT request from {RESET}{subject_name}{MAGENTA} carries URL: {GREEN}{STRING_API_CALL}{RESET}")
 
         timestamp_data = receive_all(client_socket,8)
         Timestamp = struct.unpack('>Q', timestamp_data)[0]
@@ -185,7 +192,7 @@ def direct_handle(client_socket, client_address):
         # verify the timestamp is fresh
         is_timestamp_fresh = verify_timestamp_freshness(Timestamp)
         if not is_timestamp_fresh:
-            print(f"{RED}SS: Direct request with expired timestamp received from {subject_name}{RESET}")
+            print(f"{RED}SS: Direct request with expired timestamp received from {subject_name}{RESET}",flush=True)
             return
 
         signature_tq_len_bytes = receive_all(client_socket,4)
@@ -237,10 +244,10 @@ def direct_handle(client_socket, client_address):
         SS_ANSWER_LEN_BYTES = struct.pack('<I',ss_answer_fwd_len)
         send_all(client_socket,SS_ANSWER_LEN_BYTES) # 4 bytes to let the user know how long the answer will be
 
-        print(f"{MAGENTA}SS: The reply message to the {RESET}{STRING_API_CALL}{MAGENTA} from {subject_name} is {GREEN}{ss_answer_fwd_len}{MAGENTA} bytes long and the first 10 bytes of the RAW ANSWER are {GREEN}{f10Answer} {MAGENTA}and its size is {GREEN}{raw_answer_len}  {RESET}")
+        # print(f"{MAGENTA}SS: The reply message to the {RESET}{STRING_API_CALL}{MAGENTA} from {subject_name} is {GREEN}{ss_answer_fwd_len}{MAGENTA} bytes long and the first 10 bytes of the RAW ANSWER are {GREEN}{f10Answer} {MAGENTA}and its size is {GREEN}{raw_answer_len}  {RESET}")
 
         send_all(client_socket,SS_ANSWER_FWD)
-        print(f"{GREEN}Sent answer to the DIRECT request from {subject_name}{RESET}")
+        # print(f"{GREEN}Sent answer to the DIRECT request from {subject_name}{RESET}")
         return
     except Exception as e:
         print(f"{RED}Error when carrying out DIRECT request from {client_address}{RESET}",e)
@@ -250,7 +257,7 @@ def direct_handle(client_socket, client_address):
 
 def handle_ss_client(client_socket, client_address):
 
-    print(f"{MAGENTA}SS: request from {client_address}{RESET}")
+    # print(f"{MAGENTA}SS: request from {client_address}{RESET}")
 
     # checking the option
     option = receive_all(client_socket,5)

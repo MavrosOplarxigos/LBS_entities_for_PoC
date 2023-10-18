@@ -14,5 +14,8 @@ CYAN = '\033[96m'
 CLEAR_SCREEN = '\033[2J'
 MOVE_CURSOR_TOP_LEFT = '\033[H'
 
+def colorama_init():
+    init(autoreset=True)
+
 def clear_screen_and_reset_pointer():
     print(f"{CLEAR_SCREEN}{MOVE_CURSOR_TOP_LEFT}")

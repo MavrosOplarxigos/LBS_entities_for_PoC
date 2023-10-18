@@ -21,10 +21,10 @@ SERVICE_SOCKET_TIMEOUT_S = 5
 EXPERIMENT_START_EXPECTED_PARTICIPANTS = 3
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN = 0
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX = 100
-EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 25
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 50
 SHOULD_PEER_REASK = 0
 RECORDS_TO_ACQUIRE_MIN = 1
-RECORDS_TO_ACQUIRE_MAX = 3
+RECORDS_TO_ACQUIRE_MAX = 2
 QUERIES_PER_EXPERIMENT = 10
 
 # orchestation
@@ -59,6 +59,8 @@ def analysis_generate_graph():
     for line_number, data in line_data.items():
         plt.plot(data["x"], data["y"], label=f'Peer records = {line_number}', color=colors[int(line_number) % len(colors)], marker=markers[ int(line_number) % len(markers) ] )
     # Add labels, legend, and title
+    plt.ylim(0, 1)
+    plt.xlim(0,100)
     plt.xlabel('Percent Probability of Service')
     plt.ylabel('Peer-Hit Ratio')
     plt.legend()
@@ -76,7 +78,7 @@ def analysis_clear_data_file():
 def analysis_write_point(records_returned_line,answer_prob,total,direct):
     with open(data_filename,"a") as file:
         peer_hit_ratio = (float)(total-direct) / (float)(total)
-        to_write = f"{records_returned_line} {answer_prob} {peer_hit_ratio}"
+        to_write = f"{records_returned_line} {answer_prob} {peer_hit_ratio}\n"
         file.write(to_write)
     return
 
@@ -108,12 +110,17 @@ def start_experiment():
     print(f"{GREEN}Experiments running!{RESET}")
 
     # send the number of experiments
-    number_of_experiments = (int)( ((RECORDS_TO_ACQUIRE_MAX-RECORDS_TO_ACQUIRE_MIN)+1) * ((EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX-EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN)/EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL) )
+    number_of_experiments = (int)( ((RECORDS_TO_ACQUIRE_MAX-RECORDS_TO_ACQUIRE_MIN)+1) * ( ((EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX-EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN)/EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL)+1) )
+
+    print(f"{CYAN}RECORDS TO ACQUIRE MAX = {RECORDS_TO_ACQUIRE_MAX}{RESET}")
+    print(f"{CYAN}RECORDS TO ACQUIRE MIN = {RECORDS_TO_ACQUIRE_MIN}{RESET}")
+
     print(f"{CYAN}We will run {number_of_experiments} experiments!{RESET}",flush=True)
     NUMBER_OF_EXPERIMENTS_BYTES = struct.pack('<I',(int)(number_of_experiments))
     send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,NUMBER_OF_EXPERIMENTS_BYTES)
 
     experiment_counter = 0
+
     for RECS_TO_GET in range(RECORDS_TO_ACQUIRE_MIN,RECORDS_TO_ACQUIRE_MAX+1):
         for ANS_PROB in range(EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN,EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX+1,EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL):
 
@@ -131,10 +138,10 @@ def start_experiment():
             # reset the counters of the experiment
             experiment_counters_reset()
 
-            print(f"{CYAN}Now on experiment #{experiment_counter}\n" +
-                    "Serving peer records receiveds per query = {RECS_TO_GET}\n" +
-                    "Serving probability = {ANS_PROB}%\n"
-                    +"{RESET}",flush=True)
+            print(f"{CYAN}\nNow on experiment #{experiment_counter}\n" +
+                    f"Serving peer records received per query = {RECS_TO_GET}\n" +
+                    f"Serving probability = {ANS_PROB}%\n"
+                    +f"{RESET}",flush=True)
 
             # send the signal to start
             send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,b"START")
@@ -386,6 +393,7 @@ def main():
     IS_EXPERIMENT = (True if '-E' in sys.argv else False)
 
     if IS_EXPERIMENT:
+        SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECORDS_TO_ACQUIRE_MIN
         print(f"{CYAN}It {GREEN}is{CYAN} experiment mode!{RESET}")
     else:
         print(f"{CYAN}It {GREEN}is not{CYAN} experiment mode!{RESET}")

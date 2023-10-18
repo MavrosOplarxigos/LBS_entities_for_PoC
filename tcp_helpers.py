@@ -105,7 +105,7 @@ def blocking_receive_all(sock,size):
                 raise EOFError("Receiving: Socket connection broken.")
             data += chunk
     finally:
-        sock.settimeout(original_data)
+        sock.settimeout(original_timeout)
     return data
 
 def send_all(sock,data):
