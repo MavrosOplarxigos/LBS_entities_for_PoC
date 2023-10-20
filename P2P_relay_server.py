@@ -53,12 +53,12 @@ class QueryingNodeDict(dict):
 # dynamic choices every time (e.g. 5 to 10 records per query), or based on some metric
 # related to a certain node (e.g. reputation, querying frequency).
 def records_to_return(my_name):
-    print(f"{MAGENTA}Records to acquire per query = {SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY}{RESET}",flush=True)
+    # print(f"{MAGENTA}Records to acquire per query = {SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY}{RESET}",flush=True)
     choice = SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY
     # We can't send more than we have
     my_records = len([e for e in SERVING_NODE_LIST if e['name'] == my_name])
     num_of_records = min(choice,len(SERVING_NODE_LIST)-my_records)
-    print(f"{ORANGE}records to return for {my_name} are {num_of_records}{RESET}")
+    # print(f"{ORANGE}records to return for {my_name} are {num_of_records}{RESET}")
     return num_of_records
 
 # Function to receive a CLIENT HELLO message of the format:
@@ -261,7 +261,7 @@ def get_client_availability(client_socket, client_address, node_cert, timestamp_
     timestamp_field = time.time()
 
     result = ServingNodeDict(name_field,ip_field,port_field,timestamp_field)
-    print(f"{GREEN}Disclosure from {client_address}:" + name_to_CN_only(name_field) + f" received successfully:\n{result}{RESET}",flush=True)
+    # print(f"{GREEN}Disclosure from {client_address}:" + name_to_CN_only(name_field) + f" received successfully:\n{result}{RESET}",flush=True)
 
     return result
 
@@ -271,7 +271,7 @@ def get_client_availability(client_socket, client_address, node_cert, timestamp_
 # returns Nothing. It is fully responsible to handle the connection.
 def handle_availability_client(client_socket, client_address):
 
-    print(f"{YELLOW}New availability disclosure from {client_address}{RESET}",flush=True)
+    # print(f"{YELLOW}New availability disclosure from {client_address}{RESET}",flush=True)
 
     # client hello to get the node's certificate
     node_cert, timestamp_data = client_hello(client_socket, client_address, True)
@@ -383,7 +383,7 @@ def send_query_records(records,client_socket,client_address,client_certificate):
 # returns Nothing. It is fully responsible to handle the connection.
 def handle_query_client(client_socket, client_address):
 
-    print(f"{YELLOW}New peer discovery query from {client_address}{RESET}",flush=True)
+    # print(f"{YELLOW}New peer discovery query from {client_address}{RESET}",flush=True)
 
     # client_hello to get the node's certificate
     node_cert = client_hello(client_socket, client_address, False)

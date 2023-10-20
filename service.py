@@ -18,14 +18,14 @@ SERVICE_SOCKET_TIMEOUT_S = 5
 # Experiment configuration
 
 # to configure
-EXPERIMENT_START_EXPECTED_PARTICIPANTS = 3
+EXPERIMENT_START_EXPECTED_PARTICIPANTS = 5
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN = 0
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX = 100
-EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 50
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 20
 SHOULD_PEER_REASK = 0
 RECORDS_TO_ACQUIRE_MIN = 1
-RECORDS_TO_ACQUIRE_MAX = 2
-QUERIES_PER_EXPERIMENT = 10
+RECORDS_TO_ACQUIRE_MAX = 5
+QUERIES_PER_EXPERIMENT = 50
 
 # orchestation
 EXPERIMENT_READY_PARTICIPANTS_LOCK = threading.Lock()
@@ -77,19 +77,22 @@ def analysis_clear_data_file():
 
 def analysis_write_point(records_returned_line,answer_prob,total,direct):
     with open(data_filename,"a") as file:
+        if total == 0:
+            print("{RED}OK now it's verified that for some reason we get 0 total requests on the counter{RESET}",flush=True)
+            exit()
         peer_hit_ratio = (float)(total-direct) / (float)(total)
         to_write = f"{records_returned_line} {answer_prob} {peer_hit_ratio}\n"
         file.write(to_write)
     return
 
 def experiment_counters_reset():
-    SharedVarsExperiment.SS_REQUESTS_RECEIVED = 0
-    SharedVarsExperiment.SS_REQUESTS_DIRECT = 0
+    with SharedVarsExperiment.SS_COUNTERS_LOCK:
+        SharedVarsExperiment.SS_REQUESTS_RECEIVED = 0
+        SharedVarsExperiment.SS_REQUESTS_DIRECT = 0
 
 def start_experiment():
 
     analysis_clear_data_file()
-    global EXPERIMENT_PARTICIPANTS_SOCKETS
     global SHOULD_PEER_REASK
     global RECORDS_TO_ACQUIRE_MIN
     global RECORDS_TO_ACQUIRE_MAX
@@ -97,10 +100,7 @@ def start_experiment():
     global EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN
     global EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX
     global EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL
-    global EXPERIMENT_READY_PARTICIPANTS_LOCK
-    global EXPERIMENT_PARTICIPANTS_COUNTER
     global EXPERIMENT_PARTICIPANTS_SOCKETS
-    global EXPERIMENT_START_EXPECTED_PARTICIPANTS
     global IS_EXPERIMENT
 
     print(f"{CYAN}Experiments will start in 5 seconds!{RESET}")
@@ -121,6 +121,7 @@ def start_experiment():
 
     experiment_counter = 0
 
+    SECONDS_EXPERIMENT_BEGIN = time.time()
     for RECS_TO_GET in range(RECORDS_TO_ACQUIRE_MIN,RECORDS_TO_ACQUIRE_MAX+1):
         for ANS_PROB in range(EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN,EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX+1,EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL):
 
@@ -128,6 +129,8 @@ def start_experiment():
             SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECS_TO_GET
             SharedVarsExperiment.OVERRIDE_AVAILABILITY_CHECKS_ON_EARLY_REASKS = 1
             experiment_counter+=1
+            EXPERIMENT_COUNTER_BYTES = struct.pack('<I',(int)(experiment_counter))
+            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,EXPERIMENT_COUNTER_BYTES)
             ANS_PROB_BYTES = struct.pack('<I',(int)( ANS_PROB ) )
             send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,ANS_PROB_BYTES)
             REASK_BYTES = b"YES" if (SHOULD_PEER_REASK>0) else b"NOP"
@@ -138,6 +141,8 @@ def start_experiment():
             # reset the counters of the experiment
             experiment_counters_reset()
 
+            time.sleep(2) # We are giving all the experiment threads on the devices time to read the data send before we send the signal to start this instance of the experiment
+
             print(f"{CYAN}\nNow on experiment #{experiment_counter}\n" +
                     f"Serving peer records received per query = {RECS_TO_GET}\n" +
                     f"Serving probability = {ANS_PROB}%\n"
@@ -146,12 +151,21 @@ def start_experiment():
             # send the signal to start
             send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,b"START")
 
+            # the devices run the experiment independetly
+            print(f"{CYAN}Experiment #{experiment_counter} is now running. The START signal was send to all the epxeriment participants{RESET}")
+
             # wait for all of the partiicipants to send back that they have finished
             for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
                 is_finished = blocking_receive_all(client_socket,4)
                 # let's not check what kind of string we receive just get 4 bytes
 
+            print(f"{CYAN}All devices have returned their DONE for experiment #{experiment_counter}{RESET}")
+
             analysis_write_point(RECS_TO_GET,ANS_PROB,SharedVarsExperiment.SS_REQUESTS_RECEIVED,SharedVarsExperiment.SS_REQUESTS_DIRECT)
+
+    SECONDS_EXPERIMENT_END = time.time()
+    SECONDS_FOR_ALL_EXPERIMENTS = SECONDS_EXPERIMENT_END - SECONDS_EXPERIMENT_BEGIN
+    print(f"{CYAN}The time taken for ALL experiments to run was {SECONDS_FOR_ALL_EXPERIMENTS} seconds.{RESET}")
 
     analysis_generate_graph()
 
@@ -326,6 +340,7 @@ def handle_client(client_socket,client_address):
             else:
                 print(f"{RED}CRDS request REPLY to {client_address} fail!{RESET}")
         elif option == "EXPR":
+            client_socket.settimeout(0) # We expect this to cause the socket to never drop the connection
             # a client declares readiness to join an experiment
             global IS_EXPERIMENT
             if not IS_EXPERIMENT:

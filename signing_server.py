@@ -17,18 +17,20 @@ FWD_SERVER_PORT = 50003
 MAX_SS_CONNECTIONS = 40 # How many signing requests will we be trying to answer simultaneously
 SS_CERTIFICATE = retrieve_CA_certificate()
 SS_PRIVATE = retrieved_CA_private()
+TRIED_LOADING_LOCK = threading.Lock()
 TRIED_LOADING_CACHE = 0
 
 def fullfil_URL_request(requestURL):
 
-    global TRIED_LOADING_CACHE
-    if not TRIED_LOADING_CACHE:
-        loaded = data_loading()
-        if not loaded:
-            print(f"{RED}Error: Could not load cache!{RESET}")
-        else:
-            print(f"{GREEN}First time: Cache loaded successfully!{RESET}")
-        TRIED_LOADING_CACHE = 1
+    with TRIED_LOADING_LOCK:
+        global TRIED_LOADING_CACHE
+        if not TRIED_LOADING_CACHE:
+            loaded = data_loading()
+            if not loaded:
+                print(f"{RED}Error: Could not load cache!{RESET}")
+            else:
+                print(f"{GREEN}First time: Cache loaded successfully!{RESET}")
+            TRIED_LOADING_CACHE = 1
 
     cached_record = data_record_retrieve(requestURL)
     if cached_record != None:
@@ -262,7 +264,9 @@ def handle_ss_client(client_socket, client_address):
     # checking the option
     option = receive_all(client_socket,5)
 
-    SharedVarsExperiment.SS_REQUESTS_RECEIVED += 1
+    with SharedVarsExperiment.SS_COUNTERS_LOCK:
+        SharedVarsExperiment.SS_REQUESTS_RECEIVED = SharedVarsExperiment.SS_REQUESTS_RECEIVED + 1
+        print(f"{CYAN}Requests for this experiment are now = {SharedVarsExperiment.SS_REQUESTS_RECEIVED}{RESET}")
 
     # PROXY: a serving node is requesting the fields for replying to a querying node
     if option == b"PROXY":
@@ -271,7 +275,11 @@ def handle_ss_client(client_socket, client_address):
 
     # DIREC: a querying node couldn't find any peers and it has to directly query the ss
     if option == b"DIREC":
-        SharedVarsExperiment.SS_REQUESTS_DIRECT += 1
+        
+        with SharedVarsExperiment.SS_COUNTERS_LOCK:
+            SharedVarsExperiment.SS_REQUESTS_DIRECT = SharedVarsExperiment.SS_REQUESTS_DIRECT + 1
+            print(f"{CYAN}DIRECT requests for this experiment are now = {SharedVarsExperiment.SS_REQUESTS_DIRECT}{RESET}")
+
         direct_handle(client_socket,client_address)
         return
 
