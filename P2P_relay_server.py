@@ -409,7 +409,7 @@ def handle_query_client(client_socket, client_address):
             my_query_node_record = QueryingNodeDict(name_field,time.time(),records)
             QUERYING_NODE_LIST.append(my_query_node_record)
             # OK now we can send the reply
-            print(f"{ORANGE}First time records to send: {records} {RESET}")
+            # print(f"{ORANGE}First time records to send: {records} {RESET}")
             send_query_records(records,client_socket,client_address,node_cert)
         else:
             prev = query_node_list_record[0]
@@ -435,7 +435,7 @@ def handle_query_client(client_socket, client_address):
                 my_query_node_record = QueryingNodeDict(name_field,time.time(),records)
                 QUERYING_NODE_LIST.append(my_query_node_record)
                 # OK now send the reply back
-                print(f"{ORANGE}Normal time records to send: {records} {RESET}")
+                # print(f"{ORANGE}Normal time records to send: {records} {RESET}")
                 send_query_records(records,client_socket,client_address,node_cert)
             else:
                 # early request check if it makes sense (i.e. the records we sent last time are no longer in the serving list or are not fresh)

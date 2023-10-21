@@ -160,7 +160,7 @@ def proxy_handle(client_socket, client_address):
         # print(f"{MAGENTA}SS: The reply message to the {RESET}{STRING_API_CALL}{MAGENTA} from {subject_name} is {GREEN}{ss_answer_fwd_len}{MAGENTA} bytes long and the first 10 bytes of the RAW ANSWER are {GREEN}{f10Answer} {MAGENTA}and its RAW size is {GREEN}{raw_answer_len}{RESET}",flush=True)
 
         send_all(client_socket,SS_ANSWER_FWD)
-        print(f"{GREEN}Sent answer to the PROXY request from {subject_name}{RESET}")
+        # print(f"{GREEN}Sent answer to the PROXY request from {subject_name}{RESET}")
         return
     except Exception as e:
         print(f"{RED}Error when carrying out PROXY request from {client_address}{RESET}",e)
@@ -266,7 +266,7 @@ def handle_ss_client(client_socket, client_address):
 
     with SharedVarsExperiment.SS_COUNTERS_LOCK:
         SharedVarsExperiment.SS_REQUESTS_RECEIVED = SharedVarsExperiment.SS_REQUESTS_RECEIVED + 1
-        print(f"{CYAN}Requests for this experiment are now = {SharedVarsExperiment.SS_REQUESTS_RECEIVED}{RESET}")
+        # print(f"{CYAN}Requests for this experiment are now = {SharedVarsExperiment.SS_REQUESTS_RECEIVED}{RESET}")
 
     # PROXY: a serving node is requesting the fields for replying to a querying node
     if option == b"PROXY":
@@ -278,7 +278,7 @@ def handle_ss_client(client_socket, client_address):
         
         with SharedVarsExperiment.SS_COUNTERS_LOCK:
             SharedVarsExperiment.SS_REQUESTS_DIRECT = SharedVarsExperiment.SS_REQUESTS_DIRECT + 1
-            print(f"{CYAN}DIRECT requests for this experiment are now = {SharedVarsExperiment.SS_REQUESTS_DIRECT}{RESET}")
+            # print(f"{CYAN}DIRECT requests for this experiment are now = {SharedVarsExperiment.SS_REQUESTS_DIRECT}{RESET}")
 
         direct_handle(client_socket,client_address)
         return

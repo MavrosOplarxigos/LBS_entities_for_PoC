@@ -18,14 +18,14 @@ SERVICE_SOCKET_TIMEOUT_S = 5
 # Experiment configuration
 
 # to configure
-EXPERIMENT_START_EXPECTED_PARTICIPANTS = 5
+EXPERIMENT_START_EXPECTED_PARTICIPANTS = 3
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN = 0
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX = 100
-EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 20
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 50
 SHOULD_PEER_REASK = 0
 RECORDS_TO_ACQUIRE_MIN = 1
-RECORDS_TO_ACQUIRE_MAX = 5
-QUERIES_PER_EXPERIMENT = 50
+RECORDS_TO_ACQUIRE_MAX = 2
+QUERIES_PER_EXPERIMENT = 10
 
 # orchestation
 EXPERIMENT_READY_PARTICIPANTS_LOCK = threading.Lock()
@@ -36,7 +36,6 @@ IS_EXPERIMENT = False
 # PARTICIPANTS_MIN = 3
 # PARTICIPANTS_MAX = 3 # Number of max devices that we want to have
 # PARTICIPANT_INTERVAL = 1 # How many participants do we jump per experiment
-
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -75,12 +74,12 @@ def analysis_clear_data_file():
         pass
         return
 
-def analysis_write_point(records_returned_line,answer_prob,total,direct):
+def analysis_write_point(records_returned_line,answer_prob,TOTAL,MISSES):
     with open(data_filename,"a") as file:
         if total == 0:
             print("{RED}OK now it's verified that for some reason we get 0 total requests on the counter{RESET}",flush=True)
             exit()
-        peer_hit_ratio = (float)(total-direct) / (float)(total)
+        peer_hit_ratio = (float)(TOTAL-MISSES) / (float)(TOTAL)
         to_write = f"{records_returned_line} {answer_prob} {peer_hit_ratio}\n"
         file.write(to_write)
     return
@@ -89,8 +88,12 @@ def experiment_counters_reset():
     with SharedVarsExperiment.SS_COUNTERS_LOCK:
         SharedVarsExperiment.SS_REQUESTS_RECEIVED = 0
         SharedVarsExperiment.SS_REQUESTS_DIRECT = 0
+        SharedVarsExperiment.PEER_HITS = 0
+        SharedVarsExperiment.PERR_MISSES = 0
 
 def start_experiment():
+
+    SharedVarsExperiment.NTP_CHECK_IS_EXPERIMENT = True
 
     analysis_clear_data_file()
     global SHOULD_PEER_REASK
@@ -157,11 +160,26 @@ def start_experiment():
             # wait for all of the partiicipants to send back that they have finished
             for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
                 is_finished = blocking_receive_all(client_socket,4)
-                # let's not check what kind of string we receive just get 4 bytes
+                # OK after the string we will send the count of DIRECT requests / which means peer misses
+                this_peer_hits_bytes = blocking_receive_all(client_socket,4) # Make this into integer first
+                this_peer_hits = struct.unpack('>I',this_peer_hits_bytes)[0]
+                SharedVarsExperiment.PEER_HITS += this_peer_hits
+                SharedVarsExperiment.PERR_MISSES += QUERIES_PER_EXPERIMENT - this_peer_hits
 
             print(f"{CYAN}All devices have returned their DONE for experiment #{experiment_counter}{RESET}")
+            print(f"{CYAN}TOTAL REQUESTS RECEIVED = {SharedVarsExperiment.SS_REQUESTS_RECEIVED}{RESET}")
+            print(f"{CYAN}REQUESTS THAT WERE DIRECT = {SharedVarsExperiment.SS_REQUESTS_DIRECT}{RESET}")
+            print(f"{CYAN}PEER HITS = {SharedVarsExperiment.PEER_HITS}{RESET}")
+            print(f"{CYAN}PEER MISSES = {SharedVarsExperiment.PEER_MISSES}{RESET}")
 
-            analysis_write_point(RECS_TO_GET,ANS_PROB,SharedVarsExperiment.SS_REQUESTS_RECEIVED,SharedVarsExperiment.SS_REQUESTS_DIRECT)
+            # sanity check that all requests are as we expect
+            if ( QUERIES_PER_EXPERIMENT * len(EXPERIMENT_PARTICIPANTS_SOCKETS) ) != ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES ):
+                expected_was = ( QUERIES_PER_EXPERIMENT * len(EXPERIMENT_PARTICIPANTS_SOCKETS) )
+                actual_was = ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES )
+                print(f"{RED}We have a problem with the last experiment because expected original queries were {expected_was} and actual were {actual_was}{RESET}")
+
+            TOTAL_ORIGINAL_QUERIES = ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES )
+            analysis_write_point(RECS_TO_GET,ANS_PROB,TOTAL_ORIGINAL_QUERIES,SharedVarsExperiment.PEER_MISSES)
 
     SECONDS_EXPERIMENT_END = time.time()
     SECONDS_FOR_ALL_EXPERIMENTS = SECONDS_EXPERIMENT_END - SECONDS_EXPERIMENT_BEGIN
