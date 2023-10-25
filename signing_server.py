@@ -166,6 +166,8 @@ def proxy_handle(client_socket, client_address):
         send_all(client_socket,SS_ANSWER_FWD)
         # print(f"{GREEN}Sent answer to the PROXY request from {subject_name}{RESET}")
 
+        # busy waiting for the remote party to close
+
         return
     except Exception as e:
         print(f"{RED}Error when carrying out PROXY request from {client_address}{RESET}",e)
@@ -295,6 +297,7 @@ def accept_ss_client(server_socket):
     while True:
         # print(f"{YELLOW}accept_ss_client waiting for connection from some node...{RESET}\n",flush=True)
         client_socket, client_address = server_socket.accept()
+        client_socket.settimeout(None)
         # print(f"{GREEN}accepting_ss_client received connection from some node...{RESET}\n",flush=True)
         ss_client_handle_thread = threading.Thread(target=handle_ss_client, args=(client_socket,client_address))
         ss_client_handle_thread.start()

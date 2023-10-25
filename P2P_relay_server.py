@@ -490,6 +490,7 @@ def accept_query_client(query_server_socket):
     while True:
         # print(f"{YELLOW}accept_query_client waiting for connection from some node...{RESET}\n",flush=True)
         query_client_socket, query_client_address = query_server_socket.accept()
+        query_client_socket.settimeout(None)
         # print(f"{GREEN}accept_query_client received connection from some node...{RESET}",flush=True)
         query_client_handle_thread = threading.Thread(target=handle_query_client, args=(query_client_socket, query_client_address))
         query_client_handle_thread.start()
@@ -499,6 +500,7 @@ def accept_availability_client(availability_server_socket):
     while True:
         # print(f"{YELLOW}accept_availability_client waiting for connection from some node...{RESET}\n",flush=True)
         availability_client_socket, availability_client_address = availability_server_socket.accept()
+        availability_client_socket.settimeout(None)
         # print(f"{GREEN}accept_availability_client received connection from some node...{RESET}",flush=True)
         availability_client_handle_thread = threading.Thread(target=handle_availability_client, args=(availability_client_socket, availability_client_address))
         availability_client_handle_thread.start()
