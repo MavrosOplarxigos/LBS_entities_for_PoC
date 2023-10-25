@@ -166,7 +166,8 @@ def proxy_handle(client_socket, client_address):
         send_all(client_socket,SS_ANSWER_FWD)
         # print(f"{GREEN}Sent answer to the PROXY request from {subject_name}{RESET}")
 
-        # busy waiting for the remote party to close
+        ack_data = blocking_receive_all(client_socket,3)
+        client_socket.close()
 
         return
     except Exception as e:
@@ -257,6 +258,10 @@ def direct_handle(client_socket, client_address):
 
         send_all(client_socket,SS_ANSWER_FWD)
         # print(f"{GREEN}Sent answer to the DIRECT request from {subject_name}{RESET}")
+
+        ack_data = blocking_receive_all(client_socket,3)
+        client_socket.close()
+
         return
     except Exception as e:
         print(f"{RED}Error when carrying out DIRECT request from {client_address}{RESET}",e)

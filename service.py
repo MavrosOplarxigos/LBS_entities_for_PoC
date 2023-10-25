@@ -21,10 +21,10 @@ SERVICE_SOCKET_TIMEOUT_S = 10
 EXPERIMENT_START_EXPECTED_PARTICIPANTS = 5
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN = 0
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX = 100
-EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 10
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 30
 SHOULD_PEER_REASK = 0
 RECORDS_TO_ACQUIRE_MIN = 1
-RECORDS_TO_ACQUIRE_MAX = 5
+RECORDS_TO_ACQUIRE_MAX = 1
 QUERIES_PER_EXPERIMENT = 100
 
 # orchestation
@@ -95,7 +95,10 @@ def start_experiment():
 
     SharedVarsExperiment.P2P_CHECK_IS_EXPERIMENT = True
     SharedVarsExperiment.NTP_CHECK_IS_EXPERIMENT = True
-    global SERVICE_SOCKET_TIMEOUT_S = 60 # in-experiments we increase the tolerance
+    global SERVICE_SOCKET_TIMEOUT_S
+
+    # for this socket it actually doesn't matter since this function will run after all the peers have connected to the service
+    SERVICE_SOCKET_TIMEOUT_S = 60
 
     analysis_clear_data_file()
     global SHOULD_PEER_REASK
