@@ -14,8 +14,8 @@ import random
 # Configuration:
 QUERY_SERVER_PORT = 50001
 AVAILABILITY_SERVER_PORT = 50002
-MAX_QUERY_SERVER_CONNECTIONS = 10
-MAX_AVAILABILITY_SERVER_CONNECTIONS = 10
+MAX_QUERY_SERVER_CONNECTIONS = 1000
+MAX_AVAILABILITY_SERVER_CONNECTIONS = 1000
 
 P2P_CERTIFICATE = retrieve_CA_certificate()
 P2P_PRIVATE = retrieved_CA_private()
@@ -464,12 +464,19 @@ def handle_query_client(client_socket, client_address):
                 QUERYING_NODE_LIST.append(my_query_node_record)
                 # OK now send the reply back
                 send_query_records(records,client_socket,client_address,node_cert)
-                
-    client_socket.close()
+      
+    # removed explicit socket closing because maybe we have some issue
+    # due to prematurely ending the connection
+    # client_socket.close()
+
     return
 
 # Function to manage the list and remove records from the serving node list that are not fresh
 def list_manager():
+    # to improve experiment efficiency we won't be trying to keep records fresh
+    # we know that they are fresh since the devices during the experiment are sending continually
+    if SharedVarsExperiment.P2P_CHECK_IS_EXPERIMENT:
+        return
     global SERVING_NODE_LIST_LOCK
     global SERVING_NODE_LIST
     while True:

@@ -14,7 +14,7 @@ import json
 import SharedVarsExperiment
 
 FWD_SERVER_PORT = 50003
-MAX_SS_CONNECTIONS = 40 # How many signing requests will we be trying to answer simultaneously
+MAX_SS_CONNECTIONS = 1000 # How many signing requests will we be trying to answer simultaneously
 SS_CERTIFICATE = retrieve_CA_certificate()
 SS_PRIVATE = retrieved_CA_private()
 TRIED_LOADING_LOCK = threading.Lock()
@@ -61,7 +61,7 @@ def fullfil_URL_request(requestURL):
 
             return response.content
         else:
-            print(f"{RED}SS: Could not fulfil the request: {requestURL} status code {response.status_code}{RESET}")
+            print(f"{RED}Error: SS: Could not fulfil the request: {requestURL} status code {response.status_code}{RESET}")
             return None
 
     except Exception as e:
@@ -86,7 +86,8 @@ def proxy_handle(client_socket, client_address):
 
         is_CA_signed = certificate_issuer_check(SERVING_PEER_CERTIFICATE, SS_CERTIFICATE)
         if not is_CA_signed:
-            print(f"{RED}Provided certificate from {client_address} for PROXY request is not signed by the CA.{RESET}")
+            print(f"{RED}Error: Provided certificate from {client_address} for PROXY request is not signed by the CA.{RESET}")
+            client_socket.close()
             return
 
         api_call_enc_length_bytes = receive_all(client_socket,4)
@@ -103,7 +104,8 @@ def proxy_handle(client_socket, client_address):
         # verify the timestamp is fresh
         is_timestamp_fresh = verify_timestamp_freshness(Timestamp)
         if not is_timestamp_fresh:
-            print(f"{RED}SS: Proxy request with expired timestamp received from {subject_name}{RESET}")
+            print(f"{RED}Error: SS: Proxy request with expired timestamp received from {subject_name}{RESET}")
+            client_socket.close()
             return
 
         # timestamp fresh then we move on to read the concatenated signature of the timestamp with the query
@@ -123,6 +125,7 @@ def proxy_handle(client_socket, client_address):
 
         if not is_signature_valid:
             print(f"{RED}SS: The signature on the concatenated TIMESTAMP+QUERY on the PROXY request from {subject_name} @ {client_address} for {STRING_API_CALL}{RESET}")
+            client_socket.close()
             return
 
         # the signature is valid thus we will fullfill the request
@@ -130,6 +133,7 @@ def proxy_handle(client_socket, client_address):
 
         if ANSWER_BYTE_ARRAY == None:
             print(f"{RED}SS: Error: Could NOT fulfil PROXY request {STRING_API_CALL} for {subject_name}{RESET}")
+            client_socket.close()
             return
 
         f10Answer = byte_array_first_10_bytes_decimal(ANSWER_BYTE_ARRAY)
@@ -161,6 +165,7 @@ def proxy_handle(client_socket, client_address):
 
         send_all(client_socket,SS_ANSWER_FWD)
         # print(f"{GREEN}Sent answer to the PROXY request from {subject_name}{RESET}")
+
         return
     except Exception as e:
         print(f"{RED}Error when carrying out PROXY request from {client_address}{RESET}",e)
@@ -178,7 +183,7 @@ def direct_handle(client_socket, client_address):
 
         is_CA_signed = certificate_issuer_check(QUERYING_PEER_CERTIFICATE, SS_CERTIFICATE)
         if not is_CA_signed:
-            print(f"{RED}Provided certificate from {client_address} for DIRECT request is not signed by the CA.{RESET}")
+            print(f"{RED}Error: Provided certificate from {client_address} for DIRECT request is not signed by the CA.{RESET}")
             return
 
         api_call_enc_length_bytes = receive_all(client_socket,4)
@@ -194,7 +199,7 @@ def direct_handle(client_socket, client_address):
         # verify the timestamp is fresh
         is_timestamp_fresh = verify_timestamp_freshness(Timestamp)
         if not is_timestamp_fresh:
-            print(f"{RED}SS: Direct request with expired timestamp received from {subject_name}{RESET}",flush=True)
+            print(f"{RED}Error: SS: Direct request with expired timestamp received from {subject_name}{RESET}",flush=True)
             return
 
         signature_tq_len_bytes = receive_all(client_socket,4)
@@ -211,7 +216,7 @@ def direct_handle(client_socket, client_address):
         is_signature_valid = verify_signature(SIGNATURE_TIMESTAMP_QUERY,concatenation,QUERYING_PEER_CERTIFICATE)
 
         if not is_signature_valid:
-            print(f"{RED}SS: The signature on the concatenated TIMESTAMP+QUERY on the DIRECT request from {subject_name} @ {client_address} for {STRING_API_CALL}{RESET}")
+            print(f"{RED}Error: SS: The signature on the concatenated TIMESTAMP+QUERY on the DIRECT request from {subject_name} @ {client_address} for {STRING_API_CALL}{RESET}")
             return
 
         # the signature is valid thus we will fullfill the request
@@ -283,7 +288,7 @@ def handle_ss_client(client_socket, client_address):
         direct_handle(client_socket,client_address)
         return
 
-    print(f"{RED}SS: request from {client_address} has unknown option: {option}.{RESET}")
+    print(f"{RED}Error: SS: request from {client_address} has unknown option: {option}.{RESET}")
     return
 
 def accept_ss_client(server_socket):

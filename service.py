@@ -13,19 +13,19 @@ from tcp_helpers import *
 # Configuration
 SERVICE_PORT = 55444 # This port should be hardcoded in the Android site
 MAX_SERVICE_CONNECTIONS = 10
-SERVICE_SOCKET_TIMEOUT_S = 5
+SERVICE_SOCKET_TIMEOUT_S = 10
 
 # Experiment configuration
 
 # to configure
-EXPERIMENT_START_EXPECTED_PARTICIPANTS = 3
+EXPERIMENT_START_EXPECTED_PARTICIPANTS = 5
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN = 0
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX = 100
-EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 50
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 10
 SHOULD_PEER_REASK = 0
 RECORDS_TO_ACQUIRE_MIN = 1
-RECORDS_TO_ACQUIRE_MAX = 2
-QUERIES_PER_EXPERIMENT = 10
+RECORDS_TO_ACQUIRE_MAX = 5
+QUERIES_PER_EXPERIMENT = 100
 
 # orchestation
 EXPERIMENT_READY_PARTICIPANTS_LOCK = threading.Lock()
@@ -76,8 +76,8 @@ def analysis_clear_data_file():
 
 def analysis_write_point(records_returned_line,answer_prob,TOTAL,MISSES):
     with open(data_filename,"a") as file:
-        if total == 0:
-            print("{RED}OK now it's verified that for some reason we get 0 total requests on the counter{RESET}",flush=True)
+        if TOTAL == 0:
+            print(f"{RED}OK now it's verified that for some reason we get 0 total requests on the counter{RESET}",flush=True)
             exit()
         peer_hit_ratio = (float)(TOTAL-MISSES) / (float)(TOTAL)
         to_write = f"{records_returned_line} {answer_prob} {peer_hit_ratio}\n"
@@ -89,11 +89,13 @@ def experiment_counters_reset():
         SharedVarsExperiment.SS_REQUESTS_RECEIVED = 0
         SharedVarsExperiment.SS_REQUESTS_DIRECT = 0
         SharedVarsExperiment.PEER_HITS = 0
-        SharedVarsExperiment.PERR_MISSES = 0
+        SharedVarsExperiment.PEER_MISSES = 0
 
 def start_experiment():
 
+    SharedVarsExperiment.P2P_CHECK_IS_EXPERIMENT = True
     SharedVarsExperiment.NTP_CHECK_IS_EXPERIMENT = True
+    global SERVICE_SOCKET_TIMEOUT_S = 60 # in-experiments we increase the tolerance
 
     analysis_clear_data_file()
     global SHOULD_PEER_REASK
@@ -123,6 +125,7 @@ def start_experiment():
     send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,NUMBER_OF_EXPERIMENTS_BYTES)
 
     experiment_counter = 0
+    HAS_HAD_ZERO_PEERS = 0
 
     SECONDS_EXPERIMENT_BEGIN = time.time()
     for RECS_TO_GET in range(RECORDS_TO_ACQUIRE_MIN,RECORDS_TO_ACQUIRE_MAX+1):
@@ -159,12 +162,19 @@ def start_experiment():
 
             # wait for all of the partiicipants to send back that they have finished
             for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
-                is_finished = blocking_receive_all(client_socket,4)
-                # OK after the string we will send the count of DIRECT requests / which means peer misses
-                this_peer_hits_bytes = blocking_receive_all(client_socket,4) # Make this into integer first
+                
+                peer_status_option = blocking_receive_all(client_socket,4)
+                decoded_text_peer_status_option = peer_status_option.decode('utf-8')
+
+                if decoded_text_peer_status_option == "FAIL":
+                    HAS_HAD_ZERO_PEERS = 1
+                    print(f"{RED}There is a peer which had 0 serving peer records at one point{RESET}")
+
+                this_peer_hits_bytes = blocking_receive_all(client_socket,4)
                 this_peer_hits = struct.unpack('>I',this_peer_hits_bytes)[0]
                 SharedVarsExperiment.PEER_HITS += this_peer_hits
-                SharedVarsExperiment.PERR_MISSES += QUERIES_PER_EXPERIMENT - this_peer_hits
+                SharedVarsExperiment.PEER_MISSES += QUERIES_PER_EXPERIMENT - this_peer_hits
+                print(f"{GREEN}Client sent: {SharedVarsExperiment.PEER_HITS} hits and {SharedVarsExperiment.PEER_MISSES} misses.{RESET}")
 
             print(f"{CYAN}All devices have returned their DONE for experiment #{experiment_counter}{RESET}")
             print(f"{CYAN}TOTAL REQUESTS RECEIVED = {SharedVarsExperiment.SS_REQUESTS_RECEIVED}{RESET}")
@@ -185,8 +195,12 @@ def start_experiment():
     SECONDS_FOR_ALL_EXPERIMENTS = SECONDS_EXPERIMENT_END - SECONDS_EXPERIMENT_BEGIN
     print(f"{CYAN}The time taken for ALL experiments to run was {SECONDS_FOR_ALL_EXPERIMENTS} seconds.{RESET}")
 
-    analysis_generate_graph()
+    if HAS_HAD_ZERO_PEERS == 1:
+        print(f"{RED}There was at least an experiment where a node has had 0 serving peer records at some point{RESET}")
 
+    analysis_generate_graph()
+    time.sleep(10)
+    exit()
     return
 
 # Reply to INFO Strucutre:

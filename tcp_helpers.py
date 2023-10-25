@@ -83,16 +83,17 @@ def IPv4_ethernet_address():
     return None
 
 def receive_all(sock, size):
+    return blocking_receive_all(sock, size)
     # print("Entered receive_all")
-    data = b''
-    while len(data) < size:
-        # print("Waiting for ",str((size - len(data)))) 
-        chunk = sock.recv(size - len(data))
-        # print("Received the chunk")
-        if not chunk:
-            raise EOFError("Receiving: Socket connection broken.")
-        data += chunk
-    return data
+    # data = b''
+    # while len(data) < size:
+    #    # print("Waiting for ",str((size - len(data)))) 
+    #    chunk = sock.recv(size - len(data))
+    #    # print("Received the chunk")
+    #    if not chunk:
+    #        raise EOFError("Receiving: Socket connection broken.")
+    #    data += chunk
+    # return data
 
 def blocking_receive_all(sock,size):
     original_timeout = sock.gettimeout()
