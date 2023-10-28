@@ -21,53 +21,56 @@ SERVICE_SOCKET_TIMEOUT_S = 10
 EXPERIMENT_START_EXPECTED_PARTICIPANTS = 5
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN = 0
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX = 100
-EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 30
+EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 10
 SHOULD_PEER_REASK = 0
 RECORDS_TO_ACQUIRE_MIN = 1
-RECORDS_TO_ACQUIRE_MAX = 1
-QUERIES_PER_EXPERIMENT = 100
+RECORDS_TO_ACQUIRE_MAX = 4
+QUERIES_PER_EXPERIMENT = 200
 
 # orchestation
 EXPERIMENT_READY_PARTICIPANTS_LOCK = threading.Lock()
 EXPERIMENT_PARTICIPANTS_COUNTER = 0
 EXPERIMENT_PARTICIPANTS_SOCKETS = []
 IS_EXPERIMENT = False
+SHOULD_CLEAR_DATA_FILE = False
 # other specifics (not implemented yet)
 # PARTICIPANTS_MIN = 3
 # PARTICIPANTS_MAX = 3 # Number of max devices that we want to have
 # PARTICIPANT_INTERVAL = 1 # How many participants do we jump per experiment
 
-import pandas as pd
-import matplotlib.pyplot as plt
+# import pandas as pd
+# import matplotlib.pyplot as plt
 data_filename = "experiment_data.txt"
+outfile = "actual_graph_prob_mode.png"
+from post_experiment_analysis import *
 
-def analysis_generate_graph():
-    # Initialize variables to store data
-    line_data = {}  # Dictionary to store data for each line
-    colors = plt.cm.viridis(range(0, 256, 256 // 10))  # Generate a set of distinct colors
-    markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'H', '<', '>']
-    # Read data from the file
-    with open(data_filename, "r") as file:
-        for line in file:
-            line_number, x, y = map(float, line.split())
-            if line_number not in line_data:
-                line_data[line_number] = {"x": [], "y": []}
-            line_data[line_number]["x"].append(x)
-            line_data[line_number]["y"].append(y)
-    # Create a plot with different colors for each line
-    for line_number, data in line_data.items():
-        plt.plot(data["x"], data["y"], label=f'Peer records = {line_number}', color=colors[int(line_number) % len(colors)], marker=markers[ int(line_number) % len(markers) ] )
-    # Add labels, legend, and title
-    plt.ylim(0, 1)
-    plt.xlim(0,100)
-    plt.xlabel('Percent Probability of Service')
-    plt.ylabel('Peer-Hit Ratio')
-    plt.legend()
-    plt.title('Data Points from File')
-    # Save the plot to a picture file (e.g., PNG)
-    plt.savefig('test_plot.png')
-    # Display the plot (optional)
-    plt.show()
+# def analysis_generate_graph():
+#     # Initialize variables to store data
+#     line_data = {}  # Dictionary to store data for each line
+#     colors = plt.cm.viridis(range(0, 256, 256 // 10))  # Generate a set of distinct colors
+#     markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'H', '<', '>']
+#     # Read data from the file
+#     with open(data_filename, "r") as file:
+#         for line in file:
+#             line_number, x, y = map(float, line.split())
+#             if line_number not in line_data:
+#                 line_data[line_number] = {"x": [], "y": []}
+#             line_data[line_number]["x"].append(x)
+#             line_data[line_number]["y"].append(y)
+#     # Create a plot with different colors for each line
+#     for line_number, data in line_data.items():
+#         plt.plot(data["x"], data["y"], label=f'Peer records = {line_number}', color=colors[int(line_number) % len(colors)], marker=markers[ int(line_number) % len(markers) ] )
+#     # Add labels, legend, and title
+#     plt.ylim(0, 1)
+#     plt.xlim(0,100)
+#     plt.xlabel('Percent Probability of Service')
+#     plt.ylabel('Peer-Hit Ratio')
+#     plt.legend()
+#     plt.title('Data Points from File')
+#     # Save the plot to a picture file (e.g., PNG)
+#     plt.savefig('test_plot.png')
+#     # Display the plot (optional)
+#     plt.show()
 
 def analysis_clear_data_file():
     with open(data_filename,"w") as file:
@@ -80,7 +83,7 @@ def analysis_write_point(records_returned_line,answer_prob,TOTAL,MISSES):
             print(f"{RED}OK now it's verified that for some reason we get 0 total requests on the counter{RESET}",flush=True)
             exit()
         peer_hit_ratio = (float)(TOTAL-MISSES) / (float)(TOTAL)
-        to_write = f"{records_returned_line} {answer_prob} {peer_hit_ratio}\n"
+        to_write = f"{records_returned_line} {answer_prob} {peer_hit_ratio}\r\n"
         file.write(to_write)
     return
 
@@ -91,6 +94,15 @@ def experiment_counters_reset():
         SharedVarsExperiment.PEER_HITS = 0
         SharedVarsExperiment.PEER_MISSES = 0
 
+def data_point_exists(records_returned,answer_prob):
+    with open(data_filename,'r') as file:
+        for line in file:
+            line_data = line.split()
+            if len(line_data) >= 2:
+                if str(line_data[0]) == str(records_returned) and str(line_data[1]) == str(answer_prob):
+                    return True
+    return False
+
 def start_experiment():
 
     SharedVarsExperiment.P2P_CHECK_IS_EXPERIMENT = True
@@ -100,7 +112,10 @@ def start_experiment():
     # for this socket it actually doesn't matter since this function will run after all the peers have connected to the service
     SERVICE_SOCKET_TIMEOUT_S = 60
 
-    analysis_clear_data_file()
+    global SHOULD_CLEAR_DATA_FILE
+    if SHOULD_CLEAR_DATA_FILE:
+        analysis_clear_data_file()
+
     global SHOULD_PEER_REASK
     global RECORDS_TO_ACQUIRE_MIN
     global RECORDS_TO_ACQUIRE_MAX
@@ -134,6 +149,10 @@ def start_experiment():
     for RECS_TO_GET in range(RECORDS_TO_ACQUIRE_MIN,RECORDS_TO_ACQUIRE_MAX+1):
         for ANS_PROB in range(EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN,EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX+1,EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL):
 
+            if data_point_exists(RECS_TO_GET,ANS_PROB):
+                print(f"{GREEN}Experiment for {RECS_TO_GET} records returned and answer probability {ANS_PROB}% data are already in the data file.{RESET}",flush=True)
+                continue
+
             # Configure the variables and communicate configuration to the receiving client
             SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECS_TO_GET
             SharedVarsExperiment.OVERRIDE_AVAILABILITY_CHECKS_ON_EARLY_REASKS = 1
@@ -150,7 +169,7 @@ def start_experiment():
             # reset the counters of the experiment
             experiment_counters_reset()
 
-            time.sleep(2) # We are giving all the experiment threads on the devices time to read the data send before we send the signal to start this instance of the experiment
+            time.sleep(10) # We are giving all the experiment threads on the devices time to read the data send before we send the signal to start this instance of the experiment
 
             print(f"{CYAN}\nNow on experiment #{experiment_counter}\n" +
                     f"Serving peer records received per query = {RECS_TO_GET}\n" +
@@ -201,7 +220,8 @@ def start_experiment():
     if HAS_HAD_ZERO_PEERS == 1:
         print(f"{RED}There was at least an experiment where a node has had 0 serving peer records at some point{RESET}")
 
-    analysis_generate_graph()
+    sort_file(data_filename)
+    analysis_generate_graph(data_filename,outfile)
     time.sleep(10)
     exit()
     return
@@ -440,7 +460,9 @@ def main():
     
     # check if it is experiment
     global IS_EXPERIMENT
+    global SHOULD_CLEAR_DATA_FILE
     IS_EXPERIMENT = (True if '-E' in sys.argv else False)
+    SHOULD_CLEAR_DATA_FILE = (True if '-C' in sys.argv else False)
 
     if IS_EXPERIMENT:
         SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECORDS_TO_ACQUIRE_MIN

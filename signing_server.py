@@ -14,7 +14,7 @@ import json
 import SharedVarsExperiment
 
 FWD_SERVER_PORT = 50003
-MAX_SS_CONNECTIONS = 1000 # How many signing requests will we be trying to answer simultaneously
+MAX_SS_CONNECTIONS = 20000 # How many signing requests will we be trying to answer simultaneously
 SS_CERTIFICATE = retrieve_CA_certificate()
 SS_PRIVATE = retrieved_CA_private()
 TRIED_LOADING_LOCK = threading.Lock()
