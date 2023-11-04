@@ -32,6 +32,8 @@ def ntp_sync():
     set_ntp_offset()
 
 def verify_timestamp_freshness(timestamp):
+    if ( SharedVarsExperiment.NTP_CHECK_IS_EXPERIMENT ):
+        return True
     sync_delay = 0
     if NTP_OFFSET == None:
         print("Will perform sync and consider the delay for it. Ensure you sync with NTP before starting your TCP server!")
@@ -40,9 +42,9 @@ def verify_timestamp_freshness(timestamp):
         after_sync_timestamp = get_local_timestamp()
         sync_delay = (after_sync_timestamp - before_sync_timestamp)
     # We tolerate at most 2.5 seconds delay (2500 msec)
-    if ( (get_local_timestamp() + NTP_OFFSET) - (timestamp+sync_delay) > TIMESTAMP_FRESHNESS_TOLERANCE_MSEC) and (not NTP_CHECK_IS_EXPERIMENT):
+    if ( (get_local_timestamp() + NTP_OFFSET) - (timestamp+sync_delay) > TIMESTAMP_FRESHNESS_TOLERANCE_MSEC ) and (not SharedVarsExperiment.NTP_CHECK_IS_EXPERIMENT):
         return False
-    elif ( (get_local_timestamp() + NTP_OFFSET) - (timestamp+sync_delay) > TIMESTAMP_FRESHNESS_TOLERANCE_MSEC_EXPERIMENT) and (NTP_CHECK_IS_EXPERIMENT):
+    elif ( (get_local_timestamp() + NTP_OFFSET) - (timestamp+sync_delay) > TIMESTAMP_FRESHNESS_TOLERANCE_MSEC_EXPERIMENT) and (SharedVarsExperiment.NTP_CHECK_IS_EXPERIMENT):
         return False
     return True
 

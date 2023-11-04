@@ -9,10 +9,11 @@ from ntp_helpers import *
 from debug_colors import *
 from signing_server import *
 from tcp_helpers import *
+import os
 
 # Configuration
 SERVICE_PORT = 55444 # This port should be hardcoded in the Android site
-MAX_SERVICE_CONNECTIONS = 10
+MAX_SERVICE_CONNECTIONS = 100
 SERVICE_SOCKET_TIMEOUT_S = 10
 
 # Experiment configuration
@@ -23,9 +24,12 @@ EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN = 0
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX = 100
 EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL = 10
 SHOULD_PEER_REASK = 0
-RECORDS_TO_ACQUIRE_MIN = 1
-RECORDS_TO_ACQUIRE_MAX = 4
-QUERIES_PER_EXPERIMENT = 200
+RECORDS_TO_ACQUIRE_MIN = 2
+RECORDS_TO_ACQUIRE_MAX = 3
+QUERIES_PER_EXPERIMENT = 5
+ALTURISTS_MAX = 2
+ALTURISTS_MIN = 0
+ALTURISTS_INTERVAL = 1
 
 # orchestation
 EXPERIMENT_READY_PARTICIPANTS_LOCK = threading.Lock()
@@ -33,6 +37,9 @@ EXPERIMENT_PARTICIPANTS_COUNTER = 0
 EXPERIMENT_PARTICIPANTS_SOCKETS = []
 IS_EXPERIMENT = False
 SHOULD_CLEAR_DATA_FILE = False
+DETERMINISTIC_EXPERIMENT = False
+SLOW_MODE_REQUESTS = False
+
 # other specifics (not implemented yet)
 # PARTICIPANTS_MIN = 3
 # PARTICIPANTS_MAX = 3 # Number of max devices that we want to have
@@ -72,7 +79,7 @@ from post_experiment_analysis import *
 #     # Display the plot (optional)
 #     plt.show()
 
-def analysis_clear_data_file():
+def analysis_clear_data_file(data_filename):
     with open(data_filename,"w") as file:
         pass
         return
@@ -103,6 +110,14 @@ def data_point_exists(records_returned,answer_prob):
                     return True
     return False
 
+def check_file_exists_create(data_filename):
+    if not os.path.exists(data_filename):
+        with open(data_filename, "w") as fila:
+            print(f"{RED}The data output file did not exist and was therefore created!{RESET}")
+    else:
+        print(f"{GREEN}Data file already exists!{RESET}")
+    return
+
 def start_experiment():
 
     SharedVarsExperiment.P2P_CHECK_IS_EXPERIMENT = True
@@ -112,9 +127,10 @@ def start_experiment():
     # for this socket it actually doesn't matter since this function will run after all the peers have connected to the service
     SERVICE_SOCKET_TIMEOUT_S = 60
 
+    check_file_exists_create(data_filename)
     global SHOULD_CLEAR_DATA_FILE
     if SHOULD_CLEAR_DATA_FILE:
-        analysis_clear_data_file()
+        analysis_clear_data_file(data_filename)
 
     global SHOULD_PEER_REASK
     global RECORDS_TO_ACQUIRE_MIN
@@ -133,12 +149,21 @@ def start_experiment():
     print(f"{GREEN}Experiments running!{RESET}")
 
     # send the number of experiments
-    number_of_experiments = (int)( ((RECORDS_TO_ACQUIRE_MAX-RECORDS_TO_ACQUIRE_MIN)+1) * ( ((EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX-EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN)/EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL)+1) )
+    number_of_experiments = 0
+    if not DETERMINISTIC_EXPERIMENT:
+        number_of_experiments = (int)( ((RECORDS_TO_ACQUIRE_MAX-RECORDS_TO_ACQUIRE_MIN)+1) * ( ((EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX-EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN)/EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL)+1) )
+    else:
+        number_of_experiments = (int)( ((RECORDS_TO_ACQUIRE_MAX-RECORDS_TO_ACQUIRE_MIN)+1) * ( ((ALTURISTS_MAX-ALTURISTS_MIN)/ALTURISTS_INTERVAL)+1) )
 
     print(f"{CYAN}RECORDS TO ACQUIRE MAX = {RECORDS_TO_ACQUIRE_MAX}{RESET}")
-    print(f"{CYAN}RECORDS TO ACQUIRE MIN = {RECORDS_TO_ACQUIRE_MIN}{RESET}")
-
+    print(f"{CYAN}RECORDS TO ACQUIRE MIN = {RECORDS_TO_ACQUIRE_MIN}{RESET}",flush=True)
     print(f"{CYAN}We will run {number_of_experiments} experiments!{RESET}",flush=True)
+
+    if DETERMINISTIC_EXPERIMENT:
+        print(f"{CYAN}Each peer makes a derministic choice for each experiment{RESET}",flush=True)
+    else:
+        print(f"{CYAN}Each peer makes the choice to server or not based on a probability variable in the upcoming experiments.{RESET}",flush=True)
+
     NUMBER_OF_EXPERIMENTS_BYTES = struct.pack('<I',(int)(number_of_experiments))
     send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,NUMBER_OF_EXPERIMENTS_BYTES)
 
@@ -147,71 +172,182 @@ def start_experiment():
 
     SECONDS_EXPERIMENT_BEGIN = time.time()
     for RECS_TO_GET in range(RECORDS_TO_ACQUIRE_MIN,RECORDS_TO_ACQUIRE_MAX+1):
-        for ANS_PROB in range(EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN,EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX+1,EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL):
+        if not DETERMINISTIC_EXPERIMENT:
+            for ANS_PROB in range(EXPERIMENT_ANSWER_PROBABILITY_PCENT_MIN,EXPERIMENT_ANSWER_PROBABILITY_PCENT_MAX+1,EXPERIMENT_ANSWER_PROBABILITY_PCENT_INTERVAL):
 
-            if data_point_exists(RECS_TO_GET,ANS_PROB):
-                print(f"{GREEN}Experiment for {RECS_TO_GET} records returned and answer probability {ANS_PROB}% data are already in the data file.{RESET}",flush=True)
-                continue
+                if data_point_exists(RECS_TO_GET,ANS_PROB):
+                    print(f"{GREEN}Experiment for {RECS_TO_GET} records returned and answer probability {ANS_PROB}% data are already in the data file.{RESET}",flush=True)
+                    continue
 
-            # Configure the variables and communicate configuration to the receiving client
-            SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECS_TO_GET
-            SharedVarsExperiment.OVERRIDE_AVAILABILITY_CHECKS_ON_EARLY_REASKS = 1
-            experiment_counter+=1
-            EXPERIMENT_COUNTER_BYTES = struct.pack('<I',(int)(experiment_counter))
-            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,EXPERIMENT_COUNTER_BYTES)
-            ANS_PROB_BYTES = struct.pack('<I',(int)( ANS_PROB ) )
-            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,ANS_PROB_BYTES)
-            REASK_BYTES = b"YES" if (SHOULD_PEER_REASK>0) else b"NOP"
-            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,REASK_BYTES)
-            QUERIES_PER_EXPERIMENT_BYTES = struct.pack('<I',(int)( QUERIES_PER_EXPERIMENT) )
-            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,QUERIES_PER_EXPERIMENT_BYTES)
+                # Configure the variables and communicate configuration to the receiving client
+                SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECS_TO_GET
+                SharedVarsExperiment.OVERRIDE_AVAILABILITY_CHECKS_ON_EARLY_REASKS = 1
+                experiment_counter+=1
+                EXPERIMENT_COUNTER_BYTES = struct.pack('<I',(int)(experiment_counter))
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,EXPERIMENT_COUNTER_BYTES)
+                ANS_PROB_BYTES = struct.pack('<I',(int)( ANS_PROB ) )
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,ANS_PROB_BYTES)
+                REASK_BYTES = b"YES" if (SHOULD_PEER_REASK>0) else b"NOP"
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,REASK_BYTES)
+                QUERIES_PER_EXPERIMENT_BYTES = struct.pack('<I',(int)( QUERIES_PER_EXPERIMENT) )
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,QUERIES_PER_EXPERIMENT_BYTES)
+                SLOW_MODE_REQUESTS_BYTES = b"YES" if (SLOW_MODE_REQUESTS) else b"NOP"
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,SLOW_MODE_REQUESTS_BYTES)
 
-            # reset the counters of the experiment
-            experiment_counters_reset()
+                # reset the counters of the experiment
+                experiment_counters_reset()
 
-            time.sleep(10) # We are giving all the experiment threads on the devices time to read the data send before we send the signal to start this instance of the experiment
+                time.sleep(10) # We are giving all the experiment threads on the devices time to read the data send before we send the signal to start this instance of the experiment
 
-            print(f"{CYAN}\nNow on experiment #{experiment_counter}\n" +
-                    f"Serving peer records received per query = {RECS_TO_GET}\n" +
-                    f"Serving probability = {ANS_PROB}%\n"
-                    +f"{RESET}",flush=True)
+                print(f"{CYAN}\nNow on experiment #{experiment_counter}\n" +
+                        f"Serving peer records received per query = {RECS_TO_GET}\n" +
+                        f"Serving probability = {ANS_PROB}%\n"
+                        +f"{RESET}",flush=True)
 
-            # send the signal to start
-            send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,b"START")
+                # send the signal to start
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,b"START")
 
-            # the devices run the experiment independetly
-            print(f"{CYAN}Experiment #{experiment_counter} is now running. The START signal was send to all the epxeriment participants{RESET}")
+                # the devices run the experiment independetly
+                print(f"{CYAN}Experiment #{experiment_counter} is now running. The START signal was send to all the epxeriment participants{RESET}")
 
-            # wait for all of the partiicipants to send back that they have finished
-            for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
+                # NOW FOR EVERY REQUEST we will send a start signal and sync all of them until we get the next one
+                for req in range(0,QUERIES_PER_EXPERIMENT):
+                    # SEND THE SIGNAL TO START REQUEST
+                    send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,b"NEXT")
+                    # wait for all of the participants to send back that they have finished with the REQUEST
+                    for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
+                        slow_mode_done_request = blocking_receive_all(client_socket,12)
+                        decoded_code = slow_mode_done_request.decode('utf-8')
+                        if decode_code != "DONE-REQUEST":
+                            print(f"{RED}Incorrect done request code{RESET}")
+                            exit(0)
                 
-                peer_status_option = blocking_receive_all(client_socket,4)
-                decoded_text_peer_status_option = peer_status_option.decode('utf-8')
+                # wait for all of the partiicipants to send back that they have finished the EXPERIMENT
+                for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
+                    
+                    peer_status_option = blocking_receive_all(client_socket,4)
+                    decoded_text_peer_status_option = peer_status_option.decode('utf-8')
 
-                if decoded_text_peer_status_option == "FAIL":
-                    HAS_HAD_ZERO_PEERS = 1
-                    print(f"{RED}There is a peer which had 0 serving peer records at one point{RESET}")
+                    if decoded_text_peer_status_option == "FAIL":
+                        HAS_HAD_ZERO_PEERS = 1
+                        print(f"{RED}There is a peer which had 0 serving peer records at one point{RESET}")
 
-                this_peer_hits_bytes = blocking_receive_all(client_socket,4)
-                this_peer_hits = struct.unpack('>I',this_peer_hits_bytes)[0]
-                SharedVarsExperiment.PEER_HITS += this_peer_hits
-                SharedVarsExperiment.PEER_MISSES += QUERIES_PER_EXPERIMENT - this_peer_hits
-                print(f"{GREEN}Client sent: {SharedVarsExperiment.PEER_HITS} hits and {SharedVarsExperiment.PEER_MISSES} misses.{RESET}")
+                    this_peer_hits_bytes = blocking_receive_all(client_socket,4)
+                    this_peer_hits = struct.unpack('>I',this_peer_hits_bytes)[0]
+                    SharedVarsExperiment.PEER_HITS += this_peer_hits
+                    SharedVarsExperiment.PEER_MISSES += QUERIES_PER_EXPERIMENT - this_peer_hits
+                    print(f"{GREEN}Client sent: {SharedVarsExperiment.PEER_HITS} hits and {SharedVarsExperiment.PEER_MISSES} misses.{RESET}")
 
-            print(f"{CYAN}All devices have returned their DONE for experiment #{experiment_counter}{RESET}")
-            print(f"{CYAN}TOTAL REQUESTS RECEIVED = {SharedVarsExperiment.SS_REQUESTS_RECEIVED}{RESET}")
-            print(f"{CYAN}REQUESTS THAT WERE DIRECT = {SharedVarsExperiment.SS_REQUESTS_DIRECT}{RESET}")
-            print(f"{CYAN}PEER HITS = {SharedVarsExperiment.PEER_HITS}{RESET}")
-            print(f"{CYAN}PEER MISSES = {SharedVarsExperiment.PEER_MISSES}{RESET}")
+                print(f"{CYAN}All devices have returned their DONE for experiment #{experiment_counter}{RESET}")
+                print(f"{CYAN}TOTAL REQUESTS RECEIVED = {SharedVarsExperiment.SS_REQUESTS_RECEIVED}{RESET}")
+                print(f"{CYAN}REQUESTS THAT WERE DIRECT = {SharedVarsExperiment.SS_REQUESTS_DIRECT}{RESET}")
+                print(f"{CYAN}PEER HITS = {SharedVarsExperiment.PEER_HITS}{RESET}")
+                print(f"{CYAN}PEER MISSES = {SharedVarsExperiment.PEER_MISSES}{RESET}")
 
-            # sanity check that all requests are as we expect
-            if ( QUERIES_PER_EXPERIMENT * len(EXPERIMENT_PARTICIPANTS_SOCKETS) ) != ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES ):
-                expected_was = ( QUERIES_PER_EXPERIMENT * len(EXPERIMENT_PARTICIPANTS_SOCKETS) )
-                actual_was = ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES )
-                print(f"{RED}We have a problem with the last experiment because expected original queries were {expected_was} and actual were {actual_was}{RESET}")
+                # sanity check that all requests are as we expect
+                if ( QUERIES_PER_EXPERIMENT * len(EXPERIMENT_PARTICIPANTS_SOCKETS) ) != ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES ):
+                    expected_was = ( QUERIES_PER_EXPERIMENT * len(EXPERIMENT_PARTICIPANTS_SOCKETS) )
+                    actual_was = ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES )
+                    print(f"{RED}We have a problem with the last experiment because expected original queries were {expected_was} and actual were {actual_was}{RESET}")
 
-            TOTAL_ORIGINAL_QUERIES = ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES )
-            analysis_write_point(RECS_TO_GET,ANS_PROB,TOTAL_ORIGINAL_QUERIES,SharedVarsExperiment.PEER_MISSES)
+                TOTAL_ORIGINAL_QUERIES = ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES )
+                analysis_write_point(RECS_TO_GET,ANS_PROB,TOTAL_ORIGINAL_QUERIES,SharedVarsExperiment.PEER_MISSES)
+
+        else:
+            for ALTURISTS in range(ALTURISTS_MIN,ALTURISTS_MAX+1,ALTURISTS_INTERVAL):
+
+                if data_point_exists(RECS_TO_GET,ALTURISTS):
+                    print(f"{GREEN}Experiment for {RECS_TO_GET} records returned and number of alturists = {ALTURISTS}, data are already in the data file.{RESET}",flush=True)
+                    continue
+
+                # Configure the variables and communicate configuration to the receiving client
+                SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECS_TO_GET
+                SharedVarsExperiment.OVERRIDE_AVAILABILITY_CHECKS_ON_EARLY_REASKS = 1
+                experiment_counter += 1
+                EXPERIMENT_COUNTER_BYTES = struct.pack('<I',(int)(experiment_counter))
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,EXPERIMENT_COUNTER_BYTES)
+
+                # send 100% to the alturists
+                ANS_PROB_BYTES = struct.pack('<I',(int)( 100 ) )
+                for i in range(0,ALTURISTS):
+                    send_all(EXPERIMENT_PARTICIPANTS_SOCKETS[i],ANS_PROB_BYTES)
+
+                # send 0% to the non-alturists
+                ANS_PROB_BYTES = struct.pack('<I',(int)( 0 ) )
+                for i in range(ALTURISTS,len(EXPERIMENT_PARTICIPANTS_SOCKETS)):
+                    send_all(EXPERIMENT_PARTICIPANTS_SOCKETS[i],ANS_PROB_BYTES)
+
+                REASK_BYTES = b"YES" if (SHOULD_PEER_REASK>0) else b"NOP"
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,REASK_BYTES)
+                QUERIES_PER_EXPERIMENT_BYTES = struct.pack('<I',(int)( QUERIES_PER_EXPERIMENT) )
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,QUERIES_PER_EXPERIMENT_BYTES)
+
+                SLOW_MODE_REQUESTS_BYTES = b"YES" if (SLOW_MODE_REQUESTS) else b"NOP"
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,SLOW_MODE_REQUESTS_BYTES)
+
+                # reset the counters of the experiment
+                experiment_counters_reset()
+
+                time.sleep(10) # We are giving all the experiment threads on the devices time to read the data send before we send the signal to start this instance of the experiment
+
+                print(f"{CYAN}\nNow on experiment #{experiment_counter}\n" +
+                        f"Serving peer records received per query = {RECS_TO_GET}\n" +
+                        f"Alturists = {ALTURISTS} out of {len(EXPERIMENT_PARTICIPANTS_SOCKETS)} participants.\n"
+                        +f"{RESET}",flush=True)
+
+                # send the signal to start
+                send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,b"START")
+
+                # the devices run the experiment independetly
+                print(f"{CYAN}Experiment #{experiment_counter} is now running. The START signal was send to all the epxeriment participants & number of client_sockets = {len(EXPERIMENT_PARTICIPANTS_SOCKETS)}{RESET}")
+
+                # NOW FOR EVERY REQUEST we will send a start signal and sync all of them until we get the next one
+                for req in range(0,QUERIES_PER_EXPERIMENT):
+
+                    print(f"\r{req} / {QUERIES_PER_EXPERIMENT} requests sent.{RESET}", end="",flush=True)
+
+                    # SEND THE SIGNAL TO START REQUEST
+                    send_to_all_client_sockets(EXPERIMENT_PARTICIPANTS_SOCKETS,b"NEXT")
+                    # wait for all of the participants to send back that they have finished with the REQUEST
+                    for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
+                        slow_mode_done_request = blocking_receive_all(client_socket,12)
+                        decoded_code = slow_mode_done_request.decode('utf-8')
+                        if decoded_code != "DONE-REQUEST":
+                            print(f"{RED}Incorrect done request code{RESET}")
+                            exit(0)
+
+                print(f"{GREEN}Sync-finished all requests for this experiment!{RESET}")
+
+                # wait for all of the partiicipants to send back that they have finished the EXPERIMENT
+                for client_socket in EXPERIMENT_PARTICIPANTS_SOCKETS:
+                    
+                    peer_status_option = blocking_receive_all(client_socket,4)
+                    decoded_text_peer_status_option = peer_status_option.decode('utf-8')
+
+                    if decoded_text_peer_status_option == "FAIL":
+                        HAS_HAD_ZERO_PEERS = 1
+                        print(f"{RED}There is a peer which had 0 serving peer records at one point{RESET}")
+
+                    this_peer_hits_bytes = blocking_receive_all(client_socket,4)
+                    this_peer_hits = struct.unpack('>I',this_peer_hits_bytes)[0]
+                    SharedVarsExperiment.PEER_HITS += this_peer_hits
+                    SharedVarsExperiment.PEER_MISSES += QUERIES_PER_EXPERIMENT - this_peer_hits
+                    print(f"{GREEN}Client sent: {SharedVarsExperiment.PEER_HITS} hits and {SharedVarsExperiment.PEER_MISSES} misses.{RESET}")
+
+                print(f"{CYAN}All devices have returned their DONE for experiment #{experiment_counter}{RESET}")
+                print(f"{CYAN}TOTAL REQUESTS RECEIVED = {SharedVarsExperiment.SS_REQUESTS_RECEIVED}{RESET}")
+                print(f"{CYAN}REQUESTS THAT WERE DIRECT = {SharedVarsExperiment.SS_REQUESTS_DIRECT}{RESET}")
+                print(f"{CYAN}PEER HITS = {SharedVarsExperiment.PEER_HITS}{RESET}")
+                print(f"{CYAN}PEER MISSES = {SharedVarsExperiment.PEER_MISSES}{RESET}")
+
+                # sanity check that all requests are as we expect
+                if ( QUERIES_PER_EXPERIMENT * len(EXPERIMENT_PARTICIPANTS_SOCKETS) ) != ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES ):
+                    expected_was = ( QUERIES_PER_EXPERIMENT * len(EXPERIMENT_PARTICIPANTS_SOCKETS) )
+                    actual_was = ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES )
+                    print(f"{RED}We have a problem with the last experiment because expected original queries were {expected_was} and actual were {actual_was}{RESET}")
+
+                TOTAL_ORIGINAL_QUERIES = ( SharedVarsExperiment.PEER_HITS + SharedVarsExperiment.PEER_MISSES )
+                analysis_write_point(RECS_TO_GET,ALTURISTS,TOTAL_ORIGINAL_QUERIES,SharedVarsExperiment.PEER_MISSES)
 
     SECONDS_EXPERIMENT_END = time.time()
     SECONDS_FOR_ALL_EXPERIMENTS = SECONDS_EXPERIMENT_END - SECONDS_EXPERIMENT_BEGIN
@@ -221,8 +357,8 @@ def start_experiment():
         print(f"{RED}There was at least an experiment where a node has had 0 serving peer records at some point{RESET}")
 
     sort_file(data_filename)
-    analysis_generate_graph(data_filename,outfile)
-    time.sleep(10)
+    analysis_generate_graph(data_filename,outfile,DETERMINISTIC_EXPERIMENT)
+    time.sleep(1)
     exit()
     return
 
@@ -461,8 +597,16 @@ def main():
     # check if it is experiment
     global IS_EXPERIMENT
     global SHOULD_CLEAR_DATA_FILE
+    global DETERMINISTIC_EXPERIMENT
+    global SLOW_MODE_REQUESTS
     IS_EXPERIMENT = (True if '-E' in sys.argv else False)
     SHOULD_CLEAR_DATA_FILE = (True if '-C' in sys.argv else False)
+    DETERMINISTIC_EXPERIMENT = (True if '-det' in sys.argv else False)
+    SLOW_MODE_REQUESTS = (True if "-slow_mode" in sys.argv else False)
+
+    if DETERMINISTIC_EXPERIMENT:
+        global outfile
+        outfile = "actual_graph_deter_mode.png"
 
     if IS_EXPERIMENT:
         SharedVarsExperiment.RECORDS_TO_ACQUIRE_PER_QUERY = RECORDS_TO_ACQUIRE_MIN
