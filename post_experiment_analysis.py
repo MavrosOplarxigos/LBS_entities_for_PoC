@@ -61,7 +61,7 @@ def analysis_generate_graph(data_file,outfile,deterministic=False):
     plt.xlim(0,xlim_max)
 
     if not deterministic:
-        plt.xlabel('Percent Probability of Service')
+        plt.xlabel('Probability of Service (%)')
     else:
         plt.xlabel('Number of Alturistic Peers')
 
