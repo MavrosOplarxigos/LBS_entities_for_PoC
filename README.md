@@ -1,4 +1,4 @@
-# Privacy-enhancing Location-base Services: LBS owned entities implementation for PoC
+# Privacy-enhancing Location-base Services: LBS-owned entities implementation for PoC
 
 This is the implementation of the LBS entities that are employed to realize a privacy-enhaning scheme for LBS users as it is described in my master's degree thesis: \<DiVA link\>
 
@@ -19,16 +19,20 @@ In this thesis, a scheme was designed to act as a fallback and predecessor of su
 
 ## Summary of the LBS entities
 
-These entities, which realize the core functionality of the scheme are just as the included image shows:
+These entities, which realize the core functionality of the scheme are just as the included image shows, inside the green rectangle:
 
 - The CA (Certification Authority): For maintaining the user certificates and the credentials of the service itself. As well as implementing the necessary cryptographic functionality and parsing of the credentials based on the standards that they follow.
 - The P2P relay server: A server that provides for the peer discovery process by providing the users that query it with serving records (pairs of IP addressess and ports that point to other users of the scheme). This server at the same time implements checks for defending against flooding attacks and the mapping of the scheme's network.
 - The LBS server: This entity is meant for providing with the general functionality of a LBS service. In practice, it uses Google's Places API to retrieve information for user queries and returns the responses to these queries signed so that the serving user can have proof for the legitimacy of their answers and non-repudiation.
 
-![Scheme Diagram](./images/scheme.png)
+<p align="center">
+  <img src="./images/scheme.png" alt="Diagram of the Scheme" width="600"/>
+</p>
 
 All of the above entities are necessary for the scheme to be realized and as the thesis document considers they are owned by the LBS (and therefore the scheme) provider. That is, we don't need to speculate if their knowledge is shared in the current implementation but rather accept that it is shared since they are owned by the same operator (the LBS provider). In future developments, based on the opene issues in this repo, this assumption might no logner be necessary.
 
 ## Credentials
 The CA credentials are placed in a directory named "rsa_creds" in the same level as the repo and follow the naming convention as it can be seen in the "CA_server.py" file. Instructions on how to generate the credentials are provided in the master thesis document. In future iterations of this work the credential generation process will be fully automated.
 
+## Experiments
+This implementation also provides an additional server implementation for synchronizing the experiments that were run for the thesis as well as gathering the data that these generate. Additionally, a data analysis module for generating the respective graphs using the experimental data, was implemented.
