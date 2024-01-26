@@ -1,6 +1,6 @@
-# Privacy-enhancing Location-base Services: LBS-owned entities implementation for PoC
+# Secure and Privacy-enhancing Decentralized Location-based Services: LBS-owned entities implementation for PoC
 
-This is the implementation of the LBS entities that are employed to realize a privacy-enhaning scheme for LBS users as it is described in my master's degree thesis: \<DiVA link\>
+This is the implementation of the LBS-owned entities that are employed to realize a privacy-enhancing scheme for LBS users as it is described in my master's degree thesis: \<DiVA link to be added soon\>
 
 ### The mobile application
 
@@ -29,7 +29,7 @@ These entities, which realize the core functionality of the scheme are just as t
   <img src="./images/scheme.png" alt="Diagram of the Scheme" width="600"/>
 </p>
 
-All of the above entities are necessary for the scheme to be realized and as the thesis document considers they are owned by the LBS (and therefore the scheme) provider. That is, we don't need to speculate if their knowledge is shared in the current implementation but rather accept that it is shared since they are owned by the same operator (the LBS provider). In future developments, based on the opene issues in this repo, this assumption might no logner be necessary.
+All of the above entities are necessary for the scheme to be realized and as the thesis document considers they are owned by the LBS (and therefore the scheme) provider. That is, we don't need to speculate if their knowledge is shared in the current implementation but rather accept that it is shared since they are owned by the same operator (the LBS provider). In future developments, based on the open issues in this repo, this assumption might no logner be necessary.
 
 ## Credentials
 The CA credentials are placed in a directory named "rsa_creds" in the same level as the repo and follow the naming convention as it can be seen in the "CA_server.py" file. Instructions on how to generate the credentials are provided in the master thesis document. In future iterations of this work the credential generation process will be fully automated.
