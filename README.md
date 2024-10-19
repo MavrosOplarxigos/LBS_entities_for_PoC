@@ -1,6 +1,6 @@
 # Secure and Privacy-enhancing Decentralized Location-based Services: LBS-owned entities implementation for PoC
 
-This is the implementation of the LBS-owned entities that are employed to realize a privacy-enhancing scheme for LBS users as it is described in my master's degree thesis: \<DiVA link to be added soon\>
+This is the implementation of the LBS-owned entities that are employed to realize a privacy-enhancing scheme for LBS users as it is described in my master's degree thesis: [Google Scholar](https://scholar.google.com/scholar?q=Secure%20and%20Privacy-Enhancing%20Decentralized%20Location-based%20Services%3A%20An%20over-the-Internet%20P2P%20connectivity%20location-based%20service%2C%20leveraging%20pseudonyms%20for%20privacy%20enhancement.), [DiVA](https://www.diva-portal.org/smash/record.jsf?pid=diva2:1888238)
 
 ### The mobile application
 
